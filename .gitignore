@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+
+# next.js build output
+.next/
+out/
+
+# environment variables — never commit these
+.env
+.env.local
+.env*.local
+
+# local video uploads — only exists in development
+public/uploads/videos/*
+!public/uploads/videos/.gitkeep
+
+# misc
+.DS_Store
+*.pem
+.agents/
+.claude/
+skills-lock.json
