@@ -82,6 +82,7 @@ export default function UploadPage() {
     }
 
     setUploadedId(data.id)
+    router.refresh()
   }
 
   return (

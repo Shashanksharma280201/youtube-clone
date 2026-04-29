@@ -1,7 +1,9 @@
 import { notFound } from 'next/navigation'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { timeAgo, formatViews } from '@/lib/utils'
-import VideoGrid from '@/components/VideoGrid'
+import LikeButton from '@/components/LikeButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,7 +36,20 @@ export default async function WatchPage({ params }: { params: { id: string } }) 
     notFound()
   }
 
-  const related = await getRelatedVideos(params.id)
+  const [related, session] = await Promise.all([
+    getRelatedVideos(params.id),
+    getServerSession(authOptions),
+  ])
+
+  let userLiked = false
+  if (session) {
+    const like = await prisma.like.findUnique({
+      where: {
+        userId_videoId: { userId: session.user.id, videoId: params.id }
+      }
+    })
+    userLiked = !!like
+  }
 
   return (
     <div className="max-w-[1800px] mx-auto px-4 py-6">
@@ -68,7 +83,11 @@ export default async function WatchPage({ params }: { params: { id: string } }) 
             <div className="flex items-center gap-4 text-yt-muted text-sm">
               <span>{formatViews(video.views)} views</span>
               <span>{timeAgo(video.createdAt)}</span>
-              <span>❤️ {video._count.likes} likes</span>
+              <LikeButton
+                videoId={video.id}
+                initialLiked={userLiked}
+                initialCount={video._count.likes}
+              />
             </div>
           </div>
 
