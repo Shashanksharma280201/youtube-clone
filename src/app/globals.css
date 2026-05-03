@@ -30,3 +30,11 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #555;
 }
+
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

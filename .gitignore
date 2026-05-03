@@ -9,6 +9,12 @@ out/
 .env
 .env.local
 .env*.local
+/graphify-out
+CLAUDE.md
+/public/uploads
+/upload-videos
+
+
 
 # local video uploads — only exists in development
 public/uploads/videos/*
@@ -20,3 +26,4 @@ public/uploads/videos/*
 .agents/
 .claude/
 skills-lock.json
+tsconfig.tsbuildinfo

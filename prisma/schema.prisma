@@ -18,17 +18,29 @@ model User {
   comments  Comment[]
 }
 
+enum TranscriptStatus {
+  NONE
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
 model Video {
-  id          String    @id @default(cuid())
-  title       String
-  description String    @default("")
-  blobUrl     String
-  userId      String
-  user        User      @relation(fields: [userId], references: [id])
-  createdAt   DateTime  @default(now())
-  views       Int       @default(0)
-  likes       Like[]
-  comments    Comment[]
+  id                 String           @id @default(cuid())
+  title              String
+  description        String           @default("")
+  blobUrl            String
+  userId             String
+  user               User             @relation(fields: [userId], references: [id])
+  createdAt          DateTime         @default(now())
+  views              Int              @default(0)
+  likes              Like[]
+  comments           Comment[]
+  transcriptStatus   TranscriptStatus @default(NONE)
+  transcript         String?
+  transcriptSegments Json?
+  topicSegments      Json?
 }
 
 model Like {

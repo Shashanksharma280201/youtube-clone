@@ -14,7 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="bg-yt-dark text-yt-text min-h-screen">
         <SessionProvider>
           <Navbar />
-          <main className="pt-16">{children}</main>
+          <main className="pt-14">{children}</main>
         </SessionProvider>
       </body>
     </html>
