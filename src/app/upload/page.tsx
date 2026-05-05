@@ -9,15 +9,35 @@ interface FileEntry {
   file: File
   title: string
   description: string
+  previewUrl?: string | null  // undefined = loading, null = failed, string = data URL
 }
 
-function FileSvg({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" className={className}>
-      <rect x="2" y="2" width="20" height="20" rx="4" fill="currentColor" opacity="0.15" />
-      <path d="M9 8.5L16 12L9 15.5V8.5Z" fill="currentColor" opacity="0.8" />
-    </svg>
-  )
+function extractThumbnail(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file)
+    const video = document.createElement('video')
+    video.muted = true
+    video.playsInline = true
+    video.preload = 'metadata'
+
+    video.onloadedmetadata = () => {
+      video.currentTime = Math.min(1, video.duration * 0.1)
+    }
+
+    video.onseeked = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      const ctx = canvas.getContext('2d')
+      if (!ctx) { URL.revokeObjectURL(url); resolve(null); return }
+      ctx.drawImage(video, 0, 0)
+      resolve(canvas.toDataURL('image/jpeg', 0.8))
+      URL.revokeObjectURL(url)
+    }
+
+    video.onerror = () => { URL.revokeObjectURL(url); resolve(null) }
+    video.src = url
+  })
 }
 
 export default function UploadPage() {
@@ -59,10 +79,24 @@ export default function UploadPage() {
           file,
           title: file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '),
           description: '',
+          previewUrl: undefined,
         })
       }
     }
-    setEntries((prev) => [...prev, ...newEntries])
+    if (newEntries.length === 0) return
+    setEntries((prev) => {
+      const startIdx = prev.length
+      const combined = [...prev, ...newEntries]
+      // Extract thumbnails async and update state as each resolves
+      newEntries.forEach((entry, i) => {
+        extractThumbnail(entry.file).then((url) => {
+          setEntries((cur) =>
+            cur.map((e, j) => (j === startIdx + i ? { ...e, previewUrl: url } : e)),
+          )
+        })
+      })
+      return combined
+    })
   }
 
   function removeEntry(idx: number) {
@@ -101,7 +135,11 @@ export default function UploadPage() {
     }
 
     setUploadingIdx(null)
-    router.push(`/processing?ids=${ids.join(',')}`)
+    if (ids.length === 1) {
+      router.push(`/transcribe/${ids[0]}`)
+    } else {
+      router.push(`/processing?ids=${ids.join(',')}`)
+    }
   }
 
   const isUploading = uploadingIdx !== null
@@ -222,6 +260,7 @@ export default function UploadPage() {
                   {entries.map((entry, i) => {
                     const isActive = uploadingIdx === i
                     const isDone = uploadingIdx !== null && i < uploadingIdx
+                    const previewLoading = entry.previewUrl === undefined
 
                     return (
                       <div
@@ -234,23 +273,50 @@ export default function UploadPage() {
                             : 'border-yt-border bg-yt-surface'
                         }`}
                       >
-                        {/* Card header */}
-                        <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
-                          <div className="flex items-center gap-3 min-w-0">
-                            {isActive ? (
-                              <div className="w-5 h-5 border-2 border-yt-red border-t-transparent rounded-full animate-spin shrink-0" />
-                            ) : isDone ? (
-                              <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" className="w-5 h-5 shrink-0">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        {/* ── Video thumbnail preview ── */}
+                        <div className="relative w-full aspect-video bg-yt-dark overflow-hidden">
+                          {previewLoading && (
+                            <div className="absolute inset-0 bg-yt-dark animate-pulse" />
+                          )}
+                          {entry.previewUrl && (
+                            <img
+                              src={entry.previewUrl}
+                              alt={entry.title}
+                              className="w-full h-full object-cover"
+                            />
+                          )}
+                          {!previewLoading && !entry.previewUrl && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" className="w-12 h-12 text-yt-muted/40">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z" />
                               </svg>
-                            ) : (
-                              <FileSvg className="w-5 h-5 shrink-0 text-yt-muted" />
-                            )}
-                            <div className="min-w-0">
-                              <p className="text-yt-text text-sm font-medium truncate">{entry.file.name}</p>
-                              <p className="text-yt-muted text-xs">{(entry.file.size / 1024 / 1024).toFixed(1)} MB</p>
                             </div>
-                          </div>
+                          )}
+                          {/* File size badge */}
+                          <span className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] font-mono px-2 py-0.5 rounded backdrop-blur-sm">
+                            {(entry.file.size / 1024 / 1024).toFixed(1)} MB
+                          </span>
+                          {/* Upload status overlay */}
+                          {isActive && (
+                            <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-2">
+                              <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              <p className="text-white text-xs font-medium">Uploading…</p>
+                            </div>
+                          )}
+                          {isDone && (
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                              <div className="w-10 h-10 rounded-full bg-green-500/90 flex items-center justify-center">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" className="w-5 h-5">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* ── Card header ── */}
+                        <div className="flex items-center justify-between px-5 py-3 border-b border-white/5">
+                          <p className="text-yt-text text-sm font-medium truncate min-w-0">{entry.file.name}</p>
                           {!isUploading && (
                             <button
                               type="button"
@@ -262,7 +328,7 @@ export default function UploadPage() {
                           )}
                         </div>
 
-                        {/* Inputs */}
+                        {/* ── Inputs ── */}
                         <div className="px-5 py-4 space-y-3">
                           <div>
                             <label className="block text-yt-muted text-[11px] font-semibold uppercase tracking-widest mb-1.5">
@@ -292,28 +358,6 @@ export default function UploadPage() {
                             />
                           </div>
                         </div>
-
-                        {/* Status footer */}
-                        {(isActive || isDone) && (
-                          <div className="px-5 pb-4">
-                            {isActive && (
-                              <>
-                                <div className="h-0.5 bg-yt-dark rounded-full overflow-hidden">
-                                  <div className="h-full bg-yt-red rounded-full w-1/2 animate-pulse" />
-                                </div>
-                                <p className="text-yt-red text-xs mt-1.5 font-medium">Uploading…</p>
-                              </>
-                            )}
-                            {isDone && (
-                              <p className="text-green-400 text-xs flex items-center gap-1.5 font-medium">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                </svg>
-                                Uploaded successfully
-                              </p>
-                            )}
-                          </div>
-                        )}
                       </div>
                     )
                   })}
