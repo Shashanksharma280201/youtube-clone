@@ -14,6 +14,10 @@ import { s3Key, downloadFromS3, uploadToS3 } from "@/lib/s3";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const ffmpegPath: string = require("ffmpeg-static");
 
+// Ensure the binary is executable (Vercel deployments can strip execute permissions)
+import { chmodSync } from "fs";
+try { chmodSync(ffmpegPath, 0o755) } catch {}
+
 export const maxDuration = 300;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });

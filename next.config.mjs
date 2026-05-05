@@ -2,6 +2,9 @@
 const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ["bcryptjs", "ffmpeg-static"],
+    outputFileTracingIncludes: {
+      '/api/videos/[id]/transcribe': ['./node_modules/ffmpeg-static/**/*'],
+    },
   },
   images: {
     remotePatterns: [
