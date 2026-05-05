@@ -118,19 +118,32 @@ export default function UploadPage() {
     for (let i = 0; i < entries.length; i++) {
       setUploadingIdx(i)
       const { file, title, description } = entries[i]
-      const fd = new FormData()
-      fd.append('video', file)
-      fd.append('title', title.trim())
-      fd.append('description', description)
 
-      const res = await fetch('/api/upload', { method: 'POST', body: fd })
+      // Step 1: create DB record + get presigned S3 URL
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: title.trim(), description, filename: file.name, contentType: file.type }),
+      })
       const data = await res.json()
-
       if (!res.ok) {
         setError(`"${title}" failed: ${data.error ?? 'Upload error'}`)
         setUploadingIdx(null)
         return
       }
+
+      // Step 2: upload file directly to S3 (bypasses Vercel size limits)
+      const s3Res = await fetch(data.uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type },
+      })
+      if (!s3Res.ok) {
+        setError(`"${title}" failed: S3 upload error`)
+        setUploadingIdx(null)
+        return
+      }
+
       ids.push(data.id)
     }
 

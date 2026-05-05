@@ -3,11 +3,12 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import OpenAI from "openai";
-import { readFile, unlink, mkdir } from "fs/promises";
+import { readFile, unlink, mkdir, rm } from "fs/promises";
 import { existsSync } from "fs";
 import { join } from "path";
 import { spawn } from "child_process";
 import { tmpdir } from "os";
+import { s3Key, downloadFromS3, uploadToS3 } from "@/lib/s3";
 
 // Runtime require so webpack doesn't bundle the binary path (ffmpeg-static uses __dirname)
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -167,18 +168,20 @@ async function generateVideoSegments(
 ): Promise<VideoSegment[]> {
   if (segments.length === 0) return [];
 
-  const thumbnailDir = join(process.cwd(), "public", "uploads", "thumbnails", videoId);
+  const thumbnailDir = join(tmpdir(), `thumbs-${videoId}`);
   await mkdir(thumbnailDir, { recursive: true });
 
   const tasks = segments.map((seg, i) => async (): Promise<VideoSegment> => {
     const thumbName = `segment-${i}.jpg`;
     const thumbAbsPath = join(thumbnailDir, thumbName);
-    const thumbUrl = `/uploads/thumbnails/${videoId}/${thumbName}`;
+    const s3ThumbKey = `thumbnails/${videoId}/${thumbName}`;
 
-    let hasThumbnail = false;
+    let thumbnailPath: string | null = null;
     try {
       await extractFrame(videoPath, seg.start, thumbAbsPath);
-      hasThumbnail = existsSync(thumbAbsPath);
+      if (existsSync(thumbAbsPath)) {
+        thumbnailPath = await uploadToS3(thumbAbsPath, s3ThumbKey, "image/jpeg");
+      }
     } catch { /* non-fatal */ }
 
     return {
@@ -186,7 +189,7 @@ async function generateVideoSegments(
       subTag: seg.subTag,
       start: seg.start,
       end: seg.end,
-      thumbnailPath: hasThumbnail ? thumbUrl : null,
+      thumbnailPath,
     };
   });
 
@@ -224,10 +227,11 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     data: { transcriptStatus: "PROCESSING" },
   });
 
-  const videoPath = join(process.cwd(), "public", video.blobUrl);
+  const videoPath = join(tmpdir(), `${params.id}-video`);
   const audioPath = join(tmpdir(), `${params.id}.mp3`);
 
   try {
+    await downloadFromS3(s3Key(video.blobUrl), videoPath);
     await extractAudio(videoPath, audioPath);
 
     const audioBytes = await readFile(audioPath);
@@ -300,5 +304,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     );
   } finally {
     unlink(audioPath).catch(() => {});
+    unlink(videoPath).catch(() => {});
+    rm(join(tmpdir(), `thumbs-${params.id}`), { recursive: true, force: true }).catch(() => {});
   }
 }
