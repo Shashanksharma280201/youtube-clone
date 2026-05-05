@@ -4,8 +4,8 @@ import SessionProvider from '@/components/SessionProvider'
 import Navbar from '@/components/Navbar'
 
 export const metadata: Metadata = {
-  title: 'YT Clone',
-  description: 'A YouTube-like video sharing platform',
+  title: 'NebulaIQ',
+  description: 'NebulaIQ — AI-powered video intelligence platform',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

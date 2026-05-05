@@ -110,7 +110,7 @@ export default function Navbar() {
           </svg>
         </div>
         <span className="text-yt-text font-bold text-lg tracking-tight hidden sm:block">
-          YT<span className="text-yt-red">Clone</span>
+          Nebula<span className="text-yt-red">IQ</span>
         </span>
       </Link>
 
