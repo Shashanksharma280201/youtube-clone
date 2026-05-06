@@ -27,6 +27,14 @@ enum TranscriptStatus {
   FAILED
 }
 
+enum AnnotationStatus {
+  NONE
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
 model Video {
   id                 String           @id @default(cuid())
   title              String
@@ -42,6 +50,8 @@ model Video {
   transcript         String?
   transcriptSegments Json?
   topicSegments      Json?
+  annotationStatus   AnnotationStatus @default(NONE)
+  sam3Enabled        Boolean          @default(false)
 }
 
 model Like {

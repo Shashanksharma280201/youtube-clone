@@ -38,7 +38,14 @@ export default async function WatchPage({ params }: { params: { id: string } }) 
   }
 
   const segments = Array.isArray(video.topicSegments)
-    ? (video.topicSegments as { mainTag: string; subTag: string; start: number; end: number; thumbnailPath: string | null }[])
+    ? (video.topicSegments as {
+        mainTag: string
+        subTag: string
+        start: number
+        end: number
+        thumbnailPath: string | null
+        annotationFrames?: Array<{ time: number; masks: number[][][] }>
+      }[])
     : []
 
   return (

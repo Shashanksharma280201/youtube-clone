@@ -114,7 +114,7 @@ async function tagSegments(segments: RawSegment[], phases: string[]): Promise<Ta
 
   const phaseHint =
     phases.length > 0
-      ? `Use ONLY these phase labels for "m": ${phases.join(", ")}.`
+      ? `You MUST use ONLY one of these exact labels for "m": ${phases.join(", ")}. Never invent a new label — pick the closest match from the list.`
       : 'Use a single-word label for "m" that best describes the phase.';
 
   const batches: RawSegment[][] = [];
@@ -124,7 +124,7 @@ async function tagSegments(segments: RawSegment[], phases: string[]): Promise<Ta
 
   const batchResults = await Promise.all(
     batches.map(async (batch) => {
-      const input = batch.map((s, i) => ({ i, t: s.text.slice(0, 80) }));
+      const input = batch.map((s, i) => ({ i, t: s.text.slice(0, 200) }));
       try {
         const completion = await openai.chat.completions.create({
           model: "gpt-4o-mini",
@@ -267,7 +267,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     }));
 
     // Step 1: analyze video type + extract phase vocabulary
-    const sampleText = rawSegments.map((s) => s.text).join(" ").slice(0, 4000);
+    const sampleText = rawSegments.map((s) => s.text).join(" ").slice(0, 60000);
     const { phases } = await analyzeVideo(sampleText);
 
     // Step 2: tag every segment with mainTag + subTag

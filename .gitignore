@@ -27,3 +27,4 @@ public/uploads/videos/*
 .claude/
 skills-lock.json
 tsconfig.tsbuildinfo
+.vercel

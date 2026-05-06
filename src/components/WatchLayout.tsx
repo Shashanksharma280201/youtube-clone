@@ -12,6 +12,7 @@ type VideoSegment = {
   start: number
   end: number
   thumbnailPath: string | null
+  annotationFrames?: Array<{ time: number; masks: number[][][] }>
 }
 
 interface WatchLayoutProps {
@@ -156,11 +157,17 @@ export default function WatchLayout({
   transcriptSegments,
 }: WatchLayoutProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
   const cardRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const [showAnnotations, setShowAnnotations] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [hoveredTimelineIdx, setHoveredTimelineIdx] = useState<number | null>(null)
   const [activeMainTag, setActiveMainTag] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchState, setSearchState] = useState<'idle' | 'loading' | 'found' | 'empty' | 'error'>('idle')
+  const [searchResults, setSearchResults] = useState<Array<{ index: number; segment: typeof segments[0] }>>([])
 
   // Fire-and-forget view increment — not in the render critical path
   useEffect(() => {
@@ -196,11 +203,73 @@ export default function WatchLayout({
     }
   }, [activeIdx, activeMainTag])
 
+  // Sync canvas size to video native dimensions on load
+  useEffect(() => {
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas) return
+    const onMeta = () => { canvas.width = video.videoWidth; canvas.height = video.videoHeight }
+    video.addEventListener('loadedmetadata', onMeta)
+    return () => video.removeEventListener('loadedmetadata', onMeta)
+  }, [])
+
+  // Redraw annotation masks whenever the active segment changes
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    const masks = activeIdx >= 0 ? (segments[activeIdx]?.annotationFrames?.[0]?.masks ?? []) : []
+    if (!masks.length) return
+    ctx.strokeStyle = 'rgba(0, 210, 255, 0.9)'
+    ctx.fillStyle = 'rgba(0, 210, 255, 0.12)'
+    ctx.lineWidth = 2
+    for (const polygon of masks) {
+      if (polygon.length < 3) continue
+      ctx.beginPath()
+      polygon.forEach(([x, y], i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y))
+      ctx.closePath()
+      ctx.fill()
+      ctx.stroke()
+    }
+  }, [activeIdx, segments])
+
   const seekTo = useCallback((t: number) => {
     if (videoRef.current) {
       videoRef.current.currentTime = t
       videoRef.current.play()
     }
+  }, [])
+
+  const handleSearch = useCallback(async (q: string) => {
+    const query = q.trim()
+    if (!query) return
+    setSearchState('loading')
+    setSearchResults([])
+    try {
+      const res = await fetch(`/api/videos/${videoId}/search-chapter`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+      })
+      const data = await res.json()
+      if (data.found && Array.isArray(data.results)) {
+        setSearchResults(data.results)
+        setSearchState('found')
+      } else {
+        setSearchState('empty')
+      }
+    } catch {
+      setSearchState('error')
+    }
+  }, [videoId])
+
+  const clearSearch = useCallback(() => {
+    setSearchQuery('')
+    setSearchState('idle')
+    setSearchResults([])
+    searchInputRef.current?.focus()
   }, [])
 
   const total = duration || (segments.length > 0 ? segments[segments.length - 1].end : 0)
@@ -220,6 +289,7 @@ export default function WatchLayout({
   )
 
   const hasChapters = segments.length > 0
+  const hasAnnotations = useMemo(() => segments.some(s => (s.annotationFrames?.[0]?.masks?.length ?? 0) > 0), [segments])
   const activeSegment = activeIdx >= 0 ? segments[activeIdx] : null
 
   return (
@@ -230,8 +300,12 @@ export default function WatchLayout({
         <div className="flex-1 min-w-0">
 
           {/* Video player */}
-          <div className="w-full aspect-video bg-black rounded-xl overflow-hidden">
+          <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden">
             <video ref={videoRef} src={src} controls className="w-full h-full" />
+            <canvas
+              ref={canvasRef}
+              className={`absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-200 ${showAnnotations ? 'opacity-100' : 'opacity-0'}`}
+            />
           </div>
 
           {/* Phase timeline strip */}
@@ -280,6 +354,29 @@ export default function WatchLayout({
             </div>
           )}
 
+          {/* SAM3 annotation toggle — only shown when annotation data exists */}
+          {hasAnnotations && (
+            <div className="flex items-center gap-3 mt-3">
+              <button
+                onClick={() => setShowAnnotations((v) => !v)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 ${
+                  showAnnotations
+                    ? 'bg-cyan-500/15 border-cyan-500/50 text-cyan-400'
+                    : 'bg-yt-surface border-yt-border text-yt-muted hover:text-yt-text hover:border-yt-hover'
+                }`}
+              >
+                {/* Toggle track */}
+                <span className={`relative inline-flex w-7 h-4 rounded-full transition-colors duration-200 ${showAnnotations ? 'bg-cyan-500' : 'bg-yt-border'}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform duration-200 ${showAnnotations ? 'translate-x-3' : 'translate-x-0'}`} />
+                </span>
+                SAM3 Annotations
+              </button>
+              {showAnnotations && (
+                <span className="text-[11px] text-yt-muted">Cyan outlines show AI-segmented objects per chapter</span>
+              )}
+            </div>
+          )}
+
           {/* Title */}
           <h1 className="text-yt-text text-xl font-bold mt-4 mb-2">{title}</h1>
 
@@ -318,70 +415,177 @@ export default function WatchLayout({
               className="lg:sticky lg:top-4 flex flex-col overflow-hidden"
               style={{ maxHeight: 'calc(100vh - 2rem)' }}
             >
-              {/* Panel header */}
-              <div className="flex items-start justify-between gap-3 mb-3 shrink-0">
-                <div className="min-w-0">
-                  <h2 className="text-yt-text font-semibold text-base">
-                    {segments.length} Chapter{segments.length !== 1 ? 's' : ''}
-                  </h2>
-                  {activeSegment && (
-                    <p className="text-yt-muted text-xs mt-0.5 flex items-center gap-1.5 min-w-0">
-                      <span className="w-1.5 h-1.5 rounded-full bg-yt-red animate-pulse shrink-0" />
-                      <span className="truncate">{activeSegment.subTag || cap(activeSegment.mainTag)}</span>
-                    </p>
+              {/* ── Search bar ── */}
+              <div className="shrink-0 mb-3">
+                <div className={`flex items-center gap-2 bg-yt-surface border rounded-xl px-3 py-2 transition-colors duration-150 ${
+                  searchState === 'loading' ? 'border-yt-border' : 'border-yt-border hover:border-yt-hover focus-within:border-white/30'
+                }`}>
+                  {/* Icon: spinner or magnifying glass */}
+                  <span className="shrink-0 text-yt-muted">
+                    {searchState === 'loading' ? (
+                      <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                      </svg>
+                    )}
+                  </span>
+
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSearch(searchQuery)}
+                    placeholder="Search chapters…"
+                    className="flex-1 bg-transparent text-sm text-yt-text placeholder:text-yt-muted outline-none min-w-0"
+                    disabled={searchState === 'loading'}
+                  />
+
+                  {/* Clear button */}
+                  {searchQuery && searchState !== 'loading' && (
+                    <button onClick={clearSearch} className="shrink-0 text-yt-muted hover:text-yt-text transition-colors">
+                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path d="M18 6 6 18M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+
+                  {/* Search button */}
+                  {searchQuery && searchState !== 'loading' && (
+                    <button
+                      onClick={() => handleSearch(searchQuery)}
+                      className="shrink-0 bg-white/10 hover:bg-white/20 text-yt-text text-xs px-2.5 py-1 rounded-lg transition-colors"
+                    >
+                      Go
+                    </button>
                   )}
                 </div>
-                {activeMainTag && (
-                  <button
-                    onClick={() => setActiveMainTag(null)}
-                    className="shrink-0 text-xs text-yt-red hover:underline mt-0.5"
-                  >
-                    Clear ×
-                  </button>
-                )}
               </div>
 
-              {/* Phase filter chips */}
-              {mainTags.length > 1 && (
-                <div className="flex gap-2 overflow-x-auto pb-2 mb-3 shrink-0 scrollbar-hide">
-                  <button
-                    onClick={() => setActiveMainTag(null)}
-                    className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                      !activeMainTag
-                        ? 'bg-yt-red/20 text-yt-red border-yt-red/50'
-                        : 'bg-yt-hover text-yt-muted border-yt-border hover:text-yt-text'
-                    }`}
-                  >
-                    All
-                  </button>
-                  {mainTags.map((tag) => (
-                    <button
-                      key={tag}
-                      onClick={() => setActiveMainTag(activeMainTag === tag ? null : tag)}
-                      className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium border transition-all ${tagColor(tag)} ${
-                        activeMainTag === tag ? 'ring-1 ring-current opacity-100' : 'opacity-60 hover:opacity-100'
-                      }`}
-                    >
-                      {cap(tag)}
+              {/* ── Search result / idle chapters ── */}
+              {searchState === 'found' && searchResults.length > 0 ? (
+                /* Result state — same grid as normal chapters */
+                <div className="flex flex-col flex-1 overflow-hidden">
+                  <div className="flex items-center justify-between mb-3 shrink-0">
+                    <p className="text-xs text-yt-muted">
+                      <span className="text-yt-text font-medium">{searchResults.length}</span> chapter{searchResults.length !== 1 ? 's' : ''} match &ldquo;{searchQuery}&rdquo;
+                    </p>
+                    <button onClick={clearSearch} className="text-xs text-yt-muted hover:text-yt-text transition-colors">
+                      ← All chapters
                     </button>
-                  ))}
+                  </div>
+                  <div className="flex-1 overflow-y-auto pr-0.5">
+                    <div className="grid grid-cols-2 gap-2.5 pb-2">
+                      {searchResults.map(({ index, segment }) => (
+                        <ChapterCard
+                          key={index}
+                          seg={{ ...segment, idx: index }}
+                          isActive={index === activeIdx}
+                          onSeek={seekTo}
+                          cardRef={(el) => { cardRefs.current[index] = el }}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              )}
 
-              {/* Scrollable 2-column chapter grid */}
-              <div className="flex-1 overflow-y-auto pr-0.5">
-                <div className="grid grid-cols-2 gap-2.5 pb-2">
-                  {visibleSegments.map((seg) => (
-                    <ChapterCard
-                      key={seg.idx}
-                      seg={seg}
-                      isActive={seg.idx === activeIdx}
-                      onSeek={seekTo}
-                      cardRef={(el) => { cardRefs.current[seg.idx] = el }}
-                    />
-                  ))}
+              ) : searchState === 'empty' ? (
+                /* No results state */
+                <div className="flex flex-col flex-1">
+                  <div className="flex items-center justify-between mb-3 shrink-0">
+                    <span className="text-xs text-yt-muted">No match for <span className="text-yt-text font-medium">"{searchQuery}"</span></span>
+                    <button onClick={clearSearch} className="text-xs text-yt-muted hover:text-yt-text transition-colors">← All</button>
+                  </div>
+                  <div className="flex flex-col items-center justify-center flex-1 gap-2 py-10 text-center">
+                    <svg className="w-8 h-8 text-yt-muted opacity-40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                      <path d="M8 11h6M11 8v6" opacity="0.5" strokeLinecap="round" />
+                    </svg>
+                    <p className="text-yt-text text-sm font-medium">No chapter found</p>
+                    <p className="text-yt-muted text-xs max-w-[220px]">Try searching for a topic, action, or object mentioned in this video</p>
+                  </div>
                 </div>
-              </div>
+
+              ) : searchState === 'error' ? (
+                /* Error state */
+                <div className="flex flex-col flex-1">
+                  <div className="flex items-center justify-between mb-3 shrink-0">
+                    <span className="text-xs text-red-400">Search failed</span>
+                    <button onClick={clearSearch} className="text-xs text-yt-muted hover:text-yt-text transition-colors">← All</button>
+                  </div>
+                  <div className="flex items-center justify-center flex-1 py-10">
+                    <p className="text-yt-muted text-xs">Something went wrong. Please try again.</p>
+                  </div>
+                </div>
+
+              ) : (
+                /* Idle: normal chapter list */
+                <>
+                  {/* Panel header */}
+                  <div className="flex items-start justify-between gap-3 mb-3 shrink-0">
+                    <div className="min-w-0">
+                      <h2 className="text-yt-text font-semibold text-base">
+                        {segments.length} Chapter{segments.length !== 1 ? 's' : ''}
+                      </h2>
+                      {activeSegment && (
+                        <p className="text-yt-muted text-xs mt-0.5 flex items-center gap-1.5 min-w-0">
+                          <span className="w-1.5 h-1.5 rounded-full bg-yt-red animate-pulse shrink-0" />
+                          <span className="truncate">{activeSegment.subTag || cap(activeSegment.mainTag)}</span>
+                        </p>
+                      )}
+                    </div>
+                    {activeMainTag && (
+                      <button onClick={() => setActiveMainTag(null)} className="shrink-0 text-xs text-yt-red hover:underline mt-0.5">
+                        Clear ×
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Phase filter chips */}
+                  {mainTags.length > 1 && (
+                    <div className="flex gap-2 overflow-x-auto pb-2 mb-3 shrink-0 scrollbar-hide">
+                      <button
+                        onClick={() => setActiveMainTag(null)}
+                        className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                          !activeMainTag ? 'bg-yt-red/20 text-yt-red border-yt-red/50' : 'bg-yt-hover text-yt-muted border-yt-border hover:text-yt-text'
+                        }`}
+                      >
+                        All
+                      </button>
+                      {mainTags.map((tag) => (
+                        <button
+                          key={tag}
+                          onClick={() => setActiveMainTag(activeMainTag === tag ? null : tag)}
+                          className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium border transition-all ${tagColor(tag)} ${
+                            activeMainTag === tag ? 'ring-1 ring-current opacity-100' : 'opacity-60 hover:opacity-100'
+                          }`}
+                        >
+                          {cap(tag)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Scrollable 2-column chapter grid */}
+                  <div className="flex-1 overflow-y-auto pr-0.5">
+                    <div className="grid grid-cols-2 gap-2.5 pb-2">
+                      {visibleSegments.map((seg) => (
+                        <ChapterCard
+                          key={seg.idx}
+                          seg={seg}
+                          isActive={seg.idx === activeIdx}
+                          onSeek={seekTo}
+                          cardRef={(el) => { cardRefs.current[seg.idx] = el }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

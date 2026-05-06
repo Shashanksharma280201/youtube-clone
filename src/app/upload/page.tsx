@@ -49,6 +49,7 @@ export default function UploadPage() {
   const [uploadingIdx, setUploadingIdx] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [isDragging, setIsDragging] = useState(false)
+  const [sam3Enabled, setSam3Enabled] = useState(false)
 
   if (status === 'loading') {
     return (
@@ -87,7 +88,6 @@ export default function UploadPage() {
     setEntries((prev) => {
       const startIdx = prev.length
       const combined = [...prev, ...newEntries]
-      // Extract thumbnails async and update state as each resolves
       newEntries.forEach((entry, i) => {
         extractThumbnail(entry.file).then((url) => {
           setEntries((cur) =>
@@ -119,11 +119,10 @@ export default function UploadPage() {
       setUploadingIdx(i)
       const { file, title, description } = entries[i]
 
-      // Step 1: create DB record + get presigned S3 URL
       const res = await fetch('/api/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: title.trim(), description, filename: file.name, contentType: file.type }),
+        body: JSON.stringify({ title: title.trim(), description, filename: file.name, contentType: file.type, sam3Enabled }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -132,7 +131,6 @@ export default function UploadPage() {
         return
       }
 
-      // Step 2: upload file directly to S3 (bypasses Vercel size limits)
       const s3Res = await fetch(data.uploadUrl, {
         method: 'PUT',
         body: file,
@@ -241,6 +239,29 @@ export default function UploadPage() {
                     </div>
                   </div>
                 ))}
+
+                {/* SAM3 toggle */}
+                <button
+                  type="button"
+                  onClick={() => setSam3Enabled((v) => !v)}
+                  disabled={isUploading}
+                  className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border transition-all duration-200 ${
+                    sam3Enabled
+                      ? 'bg-cyan-500/10 border-cyan-500/40'
+                      : 'bg-yt-surface border-yt-border hover:border-yt-hover'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="text-lg shrink-0">🔬</span>
+                    <div className="text-left min-w-0">
+                      <p className={`text-xs font-semibold ${sam3Enabled ? 'text-cyan-400' : 'text-yt-text'}`}>SAM3 Annotation</p>
+                      <p className="text-yt-muted text-[11px]">AI segments objects per chapter</p>
+                    </div>
+                  </div>
+                  <span className={`relative inline-flex shrink-0 w-8 h-[18px] rounded-full transition-colors duration-200 ${sam3Enabled ? 'bg-cyan-500' : 'bg-yt-border'}`}>
+                    <span className={`absolute top-[3px] left-[3px] w-3 h-3 rounded-full bg-white shadow transition-transform duration-200 ${sam3Enabled ? 'translate-x-[14px]' : 'translate-x-0'}`} />
+                  </span>
+                </button>
               </div>
             </div>
           </div>
@@ -305,11 +326,9 @@ export default function UploadPage() {
                               </svg>
                             </div>
                           )}
-                          {/* File size badge */}
                           <span className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] font-mono px-2 py-0.5 rounded backdrop-blur-sm">
                             {(entry.file.size / 1024 / 1024).toFixed(1)} MB
                           </span>
-                          {/* Upload status overlay */}
                           {isActive && (
                             <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-2">
                               <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
