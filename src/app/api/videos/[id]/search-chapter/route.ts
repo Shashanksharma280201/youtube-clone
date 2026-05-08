@@ -46,12 +46,12 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       model: 'gpt-4o-mini',
       temperature: 0,
       response_format: { type: 'json_object' },
-      max_tokens: 100,
+      max_tokens: 150,
       messages: [
         {
           role: 'system',
           content:
-            'You match user queries to video chapters. Return ALL chapter indices that are relevant to the query. Return an empty array if the query is off-topic or nothing matches. Only include chapters that genuinely cover the query.',
+            'You are a strict video chapter search assistant. Your job has two steps:\n1. Decide if the query is genuinely about the video content shown in the chapters. If the query is unrelated (e.g. personal questions, general knowledge, off-topic subjects), set relevant=false and indices=[].\n2. Only if relevant=true, return the indices of chapters that directly cover the query. Do NOT pick the closest guess — if nothing truly matches, set indices=[].\n\nBe strict. It is correct and expected to return relevant=false or indices=[] when the query does not match.',
         },
         {
           role: 'user',
@@ -60,12 +60,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 Chapters:
 ${chapters.map((c) => `[${c.index}] ${c.mainTag} / ${c.subTag}${c.text ? `: "${c.text}"` : ''}`).join('\n')}
 
-Return JSON: {"indices": [<array of matching chapter indices, empty if none>]}`,
+Return JSON: {"relevant": <true|false>, "indices": [<matching chapter indices, empty array if none or not relevant>]}`,
         },
       ],
     })
 
     const parsed = JSON.parse(res.choices[0]?.message?.content ?? '{}')
+
+    if (!parsed.relevant) return NextResponse.json({ found: false })
+
     const indices: number[] = Array.isArray(parsed.indices)
       ? parsed.indices.filter((i: unknown) => typeof i === 'number' && i >= 0 && i < topicSegments.length)
       : []
