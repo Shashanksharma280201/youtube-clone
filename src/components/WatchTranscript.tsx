@@ -10,7 +10,7 @@ type Segment = {
   text: string
   mainTag?: string
   subTag?: string
-  tags?: string[] // legacy single-tag format
+  tags?: string[]
 }
 
 function fmt(seconds: number) {
@@ -58,21 +58,31 @@ export default function WatchTranscript({
 
   if (segments.length === 0) {
     return (
-      <div className="mt-4 bg-yt-surface rounded-xl p-4">
-        <h3 className="text-yt-text text-sm font-semibold mb-2">Transcript</h3>
+      <div className="mt-4 bg-white border border-yt-border rounded-2xl p-5 shadow-card">
+        <h3 className="text-yt-text text-sm font-semibold mb-3 flex items-center gap-2">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4 text-nb-violet">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
+          </svg>
+          Transcript
+        </h3>
         <p className="text-yt-muted text-sm leading-relaxed">{fallback}</p>
       </div>
     )
   }
 
   return (
-    <div className="mt-4 bg-yt-surface rounded-xl overflow-hidden">
+    <div className="mt-4 bg-white border border-yt-border rounded-2xl overflow-hidden shadow-card">
       {/* Header + filter chips */}
       <div className="px-4 pt-4 pb-3 border-b border-yt-border">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-yt-text text-sm font-semibold">Transcript</h3>
+          <h3 className="text-yt-text text-sm font-semibold flex items-center gap-2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4 text-nb-violet">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
+            </svg>
+            Transcript
+          </h3>
           {activeTag && (
-            <button onClick={() => setActiveTag(null)} className="text-xs text-yt-red hover:underline">
+            <button onClick={() => setActiveTag(null)} className="text-xs text-nb-violet hover:text-nb-indigo font-medium transition-colors">
               Clear filter ×
             </button>
           )}
@@ -82,9 +92,9 @@ export default function WatchTranscript({
           <div className="flex flex-wrap gap-1.5">
             <button
               onClick={() => setActiveTag(null)}
-              className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all duration-200 ${
                 activeTag === null
-                  ? 'bg-yt-red/20 text-yt-red border-yt-red/50'
+                  ? 'bg-nb-violet/10 text-nb-violet border-nb-violet/30'
                   : 'bg-yt-hover text-yt-muted border-yt-border hover:text-yt-text'
               }`}
             >
@@ -94,8 +104,10 @@ export default function WatchTranscript({
               <button
                 key={tag}
                 onClick={() => setActiveTag(activeTag === tag ? null : tag)}
-                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${tagColor(tag)} ${
-                  activeTag === tag ? 'ring-1 ring-current opacity-100' : 'opacity-60 hover:opacity-100'
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all duration-200 ${
+                  activeTag === tag
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300 ring-1 ring-emerald-200'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300 hover:text-slate-800'
                 }`}
               >
                 {cap(tag)}
@@ -106,20 +118,20 @@ export default function WatchTranscript({
       </div>
 
       {/* Segment list */}
-      <div className="divide-y divide-yt-border/30 max-h-80 overflow-y-auto">
+      <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
         {visible.map((seg, i) => {
           const mainTag = getMainTag(seg)
           return (
-            <div key={seg.id ?? i} className="px-4 py-3 hover:bg-yt-hover/30 transition-colors">
-
-              {/* Tags row — prominent, above the text */}
+            <div key={seg.id ?? i} className="px-4 py-3 hover:bg-yt-hover/50 transition-colors">
               {(mainTag || seg.subTag) && (
                 <div className="flex flex-wrap items-center gap-2 mb-2">
                   {mainTag && (
                     <button
                       onClick={() => setActiveTag(activeTag === mainTag ? null : mainTag)}
-                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border transition-all ${tagColor(mainTag)} ${
-                        activeTag === mainTag ? 'ring-1 ring-current opacity-100' : 'opacity-90 hover:opacity-100'
+                      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-semibold border transition-all duration-200 ${
+                        activeTag === mainTag
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-300 ring-1 ring-emerald-200'
+                          : 'bg-slate-100 text-slate-600 border-slate-200 hover:border-slate-300'
                       }`}
                     >
                       <span className={`w-1.5 h-1.5 rounded-full ${tagSolidBg(mainTag)}`} />
@@ -127,16 +139,15 @@ export default function WatchTranscript({
                     </button>
                   )}
                   {seg.subTag && (
-                    <span className="text-yt-text text-xs font-medium bg-yt-hover border border-yt-border px-2.5 py-1 rounded-full">
+                    <span className="text-yt-text text-[11px] font-medium bg-yt-hover border border-yt-border px-2 py-0.5 rounded-lg">
                       {seg.subTag}
                     </span>
                   )}
                 </div>
               )}
 
-              {/* Timestamp + transcript text */}
               <div className="flex gap-2.5 items-start">
-                <span className="text-yt-red font-mono text-xs shrink-0 mt-0.5">{fmt(seg.start)}</span>
+                <span className="text-nb-violet font-mono text-xs shrink-0 mt-0.5 tabular-nums">{fmt(seg.start)}</span>
                 <p className="text-yt-muted text-sm leading-relaxed">{seg.text}</p>
               </div>
             </div>
@@ -144,7 +155,7 @@ export default function WatchTranscript({
         })}
 
         {visible.length === 0 && activeTag && (
-          <p className="text-yt-muted text-sm py-6 text-center">
+          <p className="text-yt-muted text-sm py-8 text-center">
             No segments tagged &quot;{activeTag}&quot;
           </p>
         )}
