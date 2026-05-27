@@ -32,6 +32,17 @@ interface WatchLayoutProps {
   transcriptSegments: unknown
 }
 
+const SEARCH_PLACEHOLDERS = [
+  'Show me the intro',
+  'परिचय दिखाओ',
+  'When does the demo start?',
+  'डेमो कब शुरू होता है?',
+  'Jump to the conclusion',
+  'Find the setup steps',
+  'मुख्य भाग कहाँ है?',
+  'Where are the tools shown?',
+]
+
 function fmt(s: number) {
   const m = Math.floor(s / 60)
   const sec = Math.floor(s % 60)
@@ -141,6 +152,8 @@ export default function WatchLayout({
   const [searchQuery, setSearchQuery] = useState('')
   const [searchState, setSearchState] = useState<'idle' | 'loading' | 'found' | 'empty' | 'error'>('idle')
   const [searchResults, setSearchResults] = useState<Array<{ index: number; segment: typeof segments[0] }>>([])
+  const [placeholderIdx, setPlaceholderIdx] = useState(0)
+  const [searchFocused, setSearchFocused] = useState(false)
 
   useEffect(() => {
     fetch(`/api/videos/${videoId}/view`, { method: 'PATCH' }).catch(() => {})
@@ -168,6 +181,12 @@ export default function WatchLayout({
   useEffect(() => {
     if (activeIdx >= 0 && !activeMainTag) cardRefs.current[activeIdx]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [activeIdx, activeMainTag])
+
+  useEffect(() => {
+    if (searchFocused || searchQuery) return
+    const id = setInterval(() => setPlaceholderIdx(i => (i + 1) % SEARCH_PLACEHOLDERS.length), 2800)
+    return () => clearInterval(id)
+  }, [searchFocused, searchQuery])
 
   const seekTo = useCallback((t: number) => {
     if (videoRef.current) { videoRef.current.currentTime = t; videoRef.current.play() }
@@ -226,8 +245,8 @@ export default function WatchLayout({
         <div className="flex-1 min-w-0">
 
           {/* Video player */}
-          <div className="w-full bg-black rounded-2xl overflow-hidden shadow-card-md border border-slate-200 flex justify-center">
-            <video ref={videoRef} src={src} controls className="block max-w-full max-h-[75vh]" />
+          <div className="w-full bg-black rounded-2xl overflow-hidden shadow-card-md border border-slate-200 aspect-video">
+            <video ref={videoRef} src={src} controls className="w-full h-full" />
           </div>
 
           {/* Title */}
@@ -283,16 +302,27 @@ export default function WatchLayout({
                     )}
                   </span>
 
-                  <input
-                    ref={searchInputRef}
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSearch(searchQuery)}
-                    placeholder="Search chapters…"
-                    className="flex-1 bg-transparent text-sm text-yt-text placeholder:text-yt-muted outline-none min-w-0"
-                    disabled={searchState === 'loading'}
-                  />
+                  <div className="flex-1 relative min-w-0">
+                    <input
+                      ref={searchInputRef}
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSearch(searchQuery)}
+                      onFocus={() => setSearchFocused(true)}
+                      onBlur={() => setSearchFocused(false)}
+                      className="w-full bg-transparent text-sm text-yt-text outline-none"
+                      disabled={searchState === 'loading'}
+                    />
+                    {!searchQuery && !searchFocused && (
+                      <span
+                        key={placeholderIdx}
+                        className="animate-placeholder-cycle absolute inset-0 flex items-center text-sm text-yt-muted pointer-events-none overflow-hidden whitespace-nowrap"
+                      >
+                        {SEARCH_PLACEHOLDERS[placeholderIdx]}
+                      </span>
+                    )}
+                  </div>
 
                   {searchQuery && searchState !== 'loading' && (
                     <button onClick={clearSearch} className="shrink-0 text-yt-muted hover:text-yt-text transition-colors">
@@ -362,9 +392,6 @@ export default function WatchLayout({
                 <>
                   <div className="flex items-start justify-between gap-3 mb-3 shrink-0">
                     <div className="min-w-0">
-                      <h2 className="text-yt-text font-semibold text-base">
-                        {segments.length} Chapter{segments.length !== 1 ? 's' : ''}
-                      </h2>
                       {activeSegment && (
                         <p className="text-yt-muted text-xs mt-0.5 flex items-center gap-1.5 min-w-0">
                           <span className="w-1.5 h-1.5 rounded-full bg-nb-violet shrink-0 animate-pulse" />

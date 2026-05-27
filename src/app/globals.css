@@ -59,3 +59,14 @@ body {
   background-size: 200% 100%;
   animation: shimmer 1.6s infinite;
 }
+
+/* Search bar animated cycling placeholder */
+@keyframes placeholderCycle {
+  0%   { transform: translateY(7px); opacity: 0; }
+  13%  { transform: translateY(0);   opacity: 1; }
+  80%  { transform: translateY(0);   opacity: 1; }
+  100% { transform: translateY(-7px); opacity: 0; }
+}
+.animate-placeholder-cycle {
+  animation: placeholderCycle 2.8s ease both;
+}

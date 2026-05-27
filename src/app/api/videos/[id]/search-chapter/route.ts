@@ -51,7 +51,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         {
           role: 'system',
           content:
-            'You are a strict video chapter search assistant. Your job has two steps:\n1. Decide if the query is genuinely about the video content shown in the chapters. If the query is unrelated (e.g. personal questions, general knowledge, off-topic subjects), set relevant=false and indices=[].\n2. Only if relevant=true, return the indices of chapters that directly cover the query. Do NOT pick the closest guess — if nothing truly matches, set indices=[].\n\nBe strict. It is correct and expected to return relevant=false or indices=[] when the query does not match.',
+            'You are a strict video chapter search assistant. The query may be in any language (e.g. Hindi, Hinglish, English). First translate it to English internally, then match it against the chapters. Do not mark a query irrelevant merely because it is in a different language than the chapters.\n\nYour job has two steps:\n1. Decide if the query is genuinely about the video content shown in the chapters. If the query is unrelated (e.g. personal questions, general knowledge, off-topic subjects), set relevant=false and indices=[].\n2. Only if relevant=true, return the indices of chapters that directly cover the query. Do NOT pick the closest guess — if nothing truly matches, set indices=[].\n\nBe strict. It is correct and expected to return relevant=false or indices=[] when the query does not match.',
         },
         {
           role: 'user',
