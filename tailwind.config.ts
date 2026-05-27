@@ -9,14 +9,15 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Core palette — clean light theme
-        "yt-red":    "#7c3aed",  // violet — primary accent
-        "yt-dark":   "#f8fafc",  // page background (slate-50)
-        "yt-surface":"#ffffff",  // card / panel white
-        "yt-hover":  "#f1f5f9",  // hover state (slate-100)
-        "yt-text":   "#0f172a",  // primary text (slate-900)
-        "yt-muted":  "#64748b",  // secondary text (slate-500)
-        "yt-border": "#e2e8f0",  // border (slate-200)
+        // Core palette — calm light theme
+        "yt-red":      "#7c3aed",  // violet — primary accent
+        "yt-dark":     "#ECEEF3",  // page background — warm cool grey (calmer than white)
+        "yt-surface":  "#ffffff",  // card / panel white — pops against yt-dark
+        "yt-surface2": "#F4F6FC",  // secondary surface — info bars, input bg, inset panels
+        "yt-hover":    "#E3E7F2",  // hover / input bg — clearly visible against cards
+        "yt-text":     "#0f172a",  // primary text
+        "yt-muted":    "#64748b",  // secondary text
+        "yt-border":   "#CBD3E8",  // border — defined but calm blue-grey
         // Extra accent tokens
         "nb-violet": "#7c3aed",
         "nb-indigo": "#6366f1",

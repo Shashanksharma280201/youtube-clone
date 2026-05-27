@@ -19,7 +19,6 @@ type VideoState = {
 function VideoCard({ id }: { id: string }) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const transcribeStartedRef = useRef(false)
-  const annotateStartedRef = useRef(false)
 
   const [state, setState] = useState<VideoState>({
     title: '',
@@ -28,7 +27,6 @@ function VideoCard({ id }: { id: string }) {
     segments: [],
     failureMessage: null,
   })
-  const [sam3Enabled, setSam3Enabled] = useState(false)
 
   function applyData(data: {
     status?: TranscriptStatus
@@ -52,10 +50,7 @@ function VideoCard({ id }: { id: string }) {
   }, [id])
 
   useEffect(() => {
-    fetch(`/api/videos/${id}/transcript`).then((r) => r.json()).then((data) => {
-      applyData(data)
-      if (data.sam3Enabled != null) setSam3Enabled(!!data.sam3Enabled)
-    })
+    fetch(`/api/videos/${id}/transcript`).then((r) => r.json()).then(applyData)
   }, [id])
 
   useEffect(() => {
@@ -73,32 +68,18 @@ function VideoCard({ id }: { id: string }) {
   }, [id])
 
   useEffect(() => {
-    if (!sam3Enabled || state.transcriptStatus !== 'DONE' || annotateStartedRef.current) return
-    if (state.annotationStatus === 'DONE' || state.annotationStatus === 'PROCESSING') return
-    annotateStartedRef.current = true
-    fetch(`/api/videos/${id}/annotate`, { method: 'POST' })
-      .then((r) => r.json())
-      .then((data) => { if (data.status) setState((prev) => ({ ...prev, annotationStatus: data.status })) })
-      .catch(() => {})
-  }, [id, sam3Enabled, state.transcriptStatus, state.annotationStatus])
-
-  useEffect(() => {
-    const isFullyDone =
-      (state.transcriptStatus === 'DONE' || state.transcriptStatus === 'FAILED') &&
-      (state.annotationStatus === 'DONE' || state.annotationStatus === 'FAILED' || state.transcriptStatus === 'FAILED')
+    const isFullyDone = state.transcriptStatus === 'DONE' || state.transcriptStatus === 'FAILED'
     if (isFullyDone) { if (pollRef.current) clearInterval(pollRef.current); return }
 
     pollRef.current = setInterval(async () => {
       try { const data = await fetch(`/api/videos/${id}/transcript`).then((r) => r.json()); applyData(data) } catch { /* ignore */ }
     }, 2000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [id, state.transcriptStatus, state.annotationStatus])
+  }, [id, state.transcriptStatus])
 
   const transcriptDone = state.transcriptStatus === 'DONE'
   const transcriptFailed = state.transcriptStatus === 'FAILED'
-  const annotationDone = state.annotationStatus === 'DONE'
-  const annotationFailed = state.annotationStatus === 'FAILED'
-  const isFullyDone = transcriptDone && (annotationDone || annotationFailed)
+  const isFullyDone = transcriptDone
   const isFailed = transcriptFailed
 
   const allTags = Array.from(new Set(state.segments.flatMap((s) => s.tags ?? []))).sort()
@@ -121,7 +102,7 @@ function VideoCard({ id }: { id: string }) {
             : isFailed ? 'bg-red-50 text-red-600 border-red-200'
             : 'bg-nb-violet/8 text-nb-violet border-nb-violet/20'
           }`}>
-            {isFullyDone ? (annotationFailed ? 'Done*' : 'Done') : isFailed ? 'Failed' : state.transcriptStatus === 'PROCESSING' ? 'Transcribing' : 'Queued'}
+            {isFullyDone ? 'Done' : isFailed ? 'Failed' : state.transcriptStatus === 'PROCESSING' ? 'Transcribing' : 'Queued'}
           </span>
         </div>
 
@@ -134,17 +115,6 @@ function VideoCard({ id }: { id: string }) {
                   : <div className="w-4 h-4 border-2 border-nb-violet border-t-transparent rounded-full animate-spin shrink-0" />
                 }
                 <span className={transcriptDone ? 'text-emerald-600' : 'text-yt-muted'}>Transcribing &amp; tagging</span>
-              </div>
-              <div className="flex items-center gap-2.5 text-xs">
-                {annotationDone
-                  ? <div className="w-4 h-4 rounded-full bg-emerald-100 flex items-center justify-center shrink-0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-2.5 h-2.5 text-emerald-600"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg></div>
-                  : transcriptDone
-                    ? <div className="w-4 h-4 border-2 border-nb-sky border-t-transparent rounded-full animate-spin shrink-0" />
-                    : <div className="w-4 h-4 rounded-full border border-slate-200 shrink-0" />
-                }
-                <span className={annotationDone ? 'text-emerald-600' : transcriptDone ? 'text-nb-sky' : 'text-slate-300'}>
-                  Annotating with SAM3
-                </span>
               </div>
             </div>
           )}

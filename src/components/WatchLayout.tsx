@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, useEffect, useMemo, useCallback } from 'react'
-import { tagColor, tagSolidBg } from '@/lib/tagColor'
+import { tagColor } from '@/lib/tagColor'
 import LikeButton from '@/components/LikeButton'
 import WatchTranscript from '@/components/WatchTranscript'
 import { timeAgo, formatViews } from '@/lib/utils'
@@ -67,7 +67,7 @@ function ChapterCard({
           : 'border-slate-200 hover:border-slate-300 hover:shadow-card-md shadow-card'
       }`}
     >
-      <div className="relative aspect-video bg-slate-100 overflow-hidden">
+      <div className="relative aspect-video bg-yt-hover overflow-hidden">
         <div className={`absolute inset-0 transition-opacity duration-300 ${loaded ? 'opacity-0 pointer-events-none' : 'shimmer'}`} />
         {hasThumb && (
           <img
@@ -132,13 +132,11 @@ export default function WatchLayout({
   transcriptSegments,
 }: WatchLayoutProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
   const cardRefs = useRef<(HTMLButtonElement | null)[]>([])
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const [showAnnotations, setShowAnnotations] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
-  const [hoveredTimelineIdx, setHoveredTimelineIdx] = useState<number | null>(null)
+
   const [activeMainTag, setActiveMainTag] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchState, setSearchState] = useState<'idle' | 'loading' | 'found' | 'empty' | 'error'>('idle')
@@ -170,36 +168,6 @@ export default function WatchLayout({
   useEffect(() => {
     if (activeIdx >= 0 && !activeMainTag) cardRefs.current[activeIdx]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [activeIdx, activeMainTag])
-
-  useEffect(() => {
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    if (!video || !canvas) return
-    const onMeta = () => { canvas.width = video.videoWidth; canvas.height = video.videoHeight }
-    video.addEventListener('loadedmetadata', onMeta)
-    return () => video.removeEventListener('loadedmetadata', onMeta)
-  }, [])
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    const masks = activeIdx >= 0 ? (segments[activeIdx]?.annotationFrames?.[0]?.masks ?? []) : []
-    if (!masks.length) return
-    ctx.strokeStyle = 'rgba(6, 182, 212, 0.9)'
-    ctx.fillStyle = 'rgba(6, 182, 212, 0.15)'
-    ctx.lineWidth = 2
-    for (const polygon of masks) {
-      if (polygon.length < 3) continue
-      ctx.beginPath()
-      polygon.forEach(([x, y], i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y))
-      ctx.closePath()
-      ctx.fill()
-      ctx.stroke()
-    }
-  }, [activeIdx, segments])
 
   const seekTo = useCallback((t: number) => {
     if (videoRef.current) { videoRef.current.currentTime = t; videoRef.current.play() }
@@ -248,7 +216,6 @@ export default function WatchLayout({
   )
 
   const hasChapters = segments.length > 0
-  const hasAnnotations = useMemo(() => segments.some(s => (s.annotationFrames?.[0]?.masks?.length ?? 0) > 0), [segments])
   const activeSegment = activeIdx >= 0 ? segments[activeIdx] : null
 
   return (
@@ -259,78 +226,9 @@ export default function WatchLayout({
         <div className="flex-1 min-w-0">
 
           {/* Video player */}
-          <div className="relative w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-card-md border border-slate-200">
-            <video ref={videoRef} src={src} controls className="w-full h-full" />
-            <canvas
-              ref={canvasRef}
-              className={`absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-200 ${showAnnotations ? 'opacity-100' : 'opacity-0'}`}
-            />
+          <div className="w-full bg-black rounded-2xl overflow-hidden shadow-card-md border border-slate-200 flex justify-center">
+            <video ref={videoRef} src={src} controls className="block max-w-full max-h-[75vh]" />
           </div>
-
-          {/* Phase timeline strip */}
-          {hasChapters && total > 0 && (
-            <div className="mt-2.5 px-0.5">
-              <div className="flex gap-[2px] h-1.5 rounded-full overflow-visible">
-                {segments.map((seg, i) => {
-                  const widthPct = ((seg.end - seg.start) / total) * 100
-                  const isActive = i === activeIdx
-                  return (
-                    <div
-                      key={i}
-                      style={{ width: `${widthPct}%` }}
-                      className={`relative cursor-pointer rounded-sm transition-all duration-150 h-1.5 hover:h-2.5 hover:-mt-0.5 ${tagSolidBg(seg.mainTag)} ${
-                        isActive ? 'opacity-100' : 'opacity-30 hover:opacity-70'
-                      }`}
-                      onClick={() => seekTo(seg.start)}
-                      onMouseEnter={() => setHoveredTimelineIdx(i)}
-                      onMouseLeave={() => setHoveredTimelineIdx(null)}
-                    >
-                      {hoveredTimelineIdx === i && (
-                        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 bg-white border border-slate-200 text-yt-text text-xs px-3 py-2 rounded-xl whitespace-nowrap z-30 pointer-events-none shadow-card-md">
-                          <span className="font-mono text-nb-violet">{fmt(seg.start)}</span>
-                          <span className="mx-1.5 text-slate-300">·</span>
-                          <span className="font-medium">{cap(seg.mainTag)}</span>
-                          {seg.subTag && (<><span className="mx-1.5 text-slate-300">·</span><span className="text-yt-muted">{seg.subTag}</span></>)}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-              {mainTags.length > 1 && (
-                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5">
-                  {mainTags.map((tag) => (
-                    <div key={tag} className="flex items-center gap-1.5">
-                      <div className={`w-2 h-2 rounded-full ${tagSolidBg(tag)}`} />
-                      <span className="text-yt-muted text-[11px]">{cap(tag)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* SAM3 toggle */}
-          {hasAnnotations && (
-            <div className="flex items-center gap-3 mt-3">
-              <button
-                onClick={() => setShowAnnotations((v) => !v)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all duration-200 ${
-                  showAnnotations
-                    ? 'bg-cyan-50 border-cyan-200 text-nb-cyan'
-                    : 'bg-white border-slate-200 text-yt-muted hover:text-yt-text hover:border-slate-300'
-                }`}
-              >
-                <span className={`relative inline-flex w-7 h-4 rounded-full transition-colors duration-200 ${showAnnotations ? 'bg-nb-cyan' : 'bg-slate-300'}`}>
-                  <span className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform duration-200 ${showAnnotations ? 'translate-x-3' : 'translate-x-0'}`} />
-                </span>
-                SAM3 Annotations
-              </button>
-              {showAnnotations && (
-                <span className="text-[11px] text-yt-muted">Cyan outlines show AI-segmented objects per chapter</span>
-              )}
-            </div>
-          )}
 
           {/* Title */}
           <h1 className="text-yt-text text-xl font-bold mt-4 mb-3 leading-snug">{title}</h1>
@@ -357,7 +255,7 @@ export default function WatchLayout({
           )}
 
           {/* Transcript */}
-          {transcriptStatus === 'DONE' && transcript && (
+          {transcriptStatus === 'DONE' && (transcript || (Array.isArray(transcriptSegments) && (transcriptSegments as unknown[]).length > 0)) && (
             <WatchTranscript segments={transcriptSegments} fallback={transcript} />
           )}
         </div>

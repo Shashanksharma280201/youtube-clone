@@ -53,13 +53,13 @@ export default function Navbar() {
 
   return (
     <header
-      className={`fixed top-0 left-0 right-0 z-50 h-14 flex items-center px-4 md:px-6 gap-3 bg-white transition-shadow duration-200 ${
-        scrolled ? 'shadow-[0_1px_0_#e2e8f0,0_4px_16px_rgba(0,0,0,0.06)]' : 'border-b border-yt-border'
+      className={`fixed top-0 left-0 right-0 z-50 h-14 flex items-center px-4 md:px-6 gap-3 bg-white/90 backdrop-blur-md transition-all duration-200 ${
+        scrolled ? 'shadow-[0_1px_0_#CBD3E8,0_4px_20px_rgba(0,0,0,0.07)]' : 'border-b border-yt-border'
       }`}
     >
       {/* Mobile search overlay */}
       {mobileSearchOpen && (
-        <div className="absolute inset-0 bg-white flex items-center px-3 gap-2 md:hidden z-10 border-b border-yt-border">
+        <div className="absolute inset-0 bg-white/95 backdrop-blur-md flex items-center px-3 gap-2 md:hidden z-10 border-b border-yt-border">
           <button
             onClick={() => setMobileSearchOpen(false)}
             className="shrink-0 w-9 h-9 flex items-center justify-center rounded-xl text-yt-muted hover:text-yt-text hover:bg-yt-hover transition-colors"

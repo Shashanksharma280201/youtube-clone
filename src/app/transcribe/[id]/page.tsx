@@ -14,20 +14,15 @@ type Segment = {
   tags?: string[]
 }
 
-type AnnotationFrame = { time: number; masks: number[][][] }
-
 type TopicSegment = {
   mainTag: string
   subTag: string
   start: number
   end: number
   thumbnailPath: string | null
-  sam3Prompt?: string
-  annotationFrames?: AnnotationFrame[]
 }
 
 type TranscriptStatus = 'NONE' | 'PENDING' | 'PROCESSING' | 'DONE' | 'FAILED'
-type AnnotationStatus = 'NONE' | 'PENDING' | 'PROCESSING' | 'DONE' | 'FAILED'
 
 function cap(s: string) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s
@@ -46,13 +41,10 @@ function fmt(seconds: number) {
 export default function TranscribePage({ params }: { params: { id: string } }) {
   const { id } = params
   const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const segmentRefs = useRef<(HTMLButtonElement | null)[]>([])
 
   const [status, setStatus] = useState<TranscriptStatus>('PENDING')
-  const [annotationStatus, setAnnotationStatus] = useState<AnnotationStatus>('NONE')
-  const [sam3Enabled, setSam3Enabled] = useState(false)
   const [segments, setSegments] = useState<Segment[]>([])
   const [topicSegments, setTopicSegments] = useState<TopicSegment[]>([])
   const [failureMessage, setFailureMessage] = useState<string | null>(null)
@@ -60,10 +52,6 @@ export default function TranscribePage({ params }: { params: { id: string } }) {
   const [activeSegmentIdx, setActiveSegmentIdx] = useState<number | null>(null)
   const [transcribeStarted, setTranscribeStarted] = useState(false)
   const [activeMainTag, setActiveMainTag] = useState<string | null>(null)
-
-  const [correctionMode, setCorrectionMode] = useState(false)
-  const [isAnnotating, setIsAnnotating] = useState(false)
-  const annotateStartedRef = useRef(false)
 
   const allMainTags = useMemo(() => {
     const seen = new Set<string>()
@@ -81,16 +69,12 @@ export default function TranscribePage({ params }: { params: { id: string } }) {
 
   function applyTranscriptData(data: {
     status: TranscriptStatus
-    annotationStatus?: AnnotationStatus
-    sam3Enabled?: boolean
     transcript?: string | null
     message?: string | null
     segments?: Segment[] | null
     topicSegments?: TopicSegment[] | null
   }) {
     setStatus(data.status)
-    if (data.annotationStatus != null) setAnnotationStatus(data.annotationStatus)
-    if (data.sam3Enabled != null) setSam3Enabled(!!data.sam3Enabled)
     if (Array.isArray(data.segments) && data.segments.length > 0) setSegments(data.segments)
     if (Array.isArray(data.topicSegments) && data.topicSegments.length > 0) setTopicSegments(data.topicSegments)
     if (data.status === 'FAILED') setFailureMessage(data.message ?? data.transcript ?? 'Transcription failed. Please try again.')
@@ -116,22 +100,7 @@ export default function TranscribePage({ params }: { params: { id: string } }) {
   }, [id, transcribeStarted])
 
   useEffect(() => {
-    if (!sam3Enabled) return
-    if (status !== 'DONE') return
-    if (annotationStatus === 'DONE' || annotationStatus === 'PROCESSING' || annotationStatus === 'FAILED') return
-    if (annotateStartedRef.current) return
-    annotateStartedRef.current = true
-    fetch(`/api/videos/${id}/annotate`, { method: 'POST' })
-      .then((r) => r.json())
-      .then((data) => { if (data.status) setAnnotationStatus(data.status) })
-      .catch(() => {})
-  }, [id, sam3Enabled, status, annotationStatus])
-
-  useEffect(() => {
-    const done =
-      (status === 'DONE' || status === 'FAILED') &&
-      (annotationStatus === 'DONE' || annotationStatus === 'FAILED' || status === 'FAILED')
-
+    const done = status === 'DONE' || status === 'FAILED'
     if (done) {
       if (pollRef.current) clearInterval(pollRef.current)
       return
@@ -143,41 +112,7 @@ export default function TranscribePage({ params }: { params: { id: string } }) {
       } catch { /* ignore */ }
     }, 2000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [id, status, annotationStatus])
-
-  useEffect(() => {
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    if (!video || !canvas) return
-    function onMeta() { canvas!.width = video!.videoWidth; canvas!.height = video!.videoHeight }
-    video.addEventListener('loadedmetadata', onMeta)
-    if (video.readyState >= 1) onMeta()
-    return () => video.removeEventListener('loadedmetadata', onMeta)
-  }, [videoUrl])
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    if (activeSegmentIdx === null) return
-    const topic = topicSegments[activeSegmentIdx]
-    if (!topic?.annotationFrames?.length) return
-    const masks = topic.annotationFrames[0]?.masks ?? []
-    if (!masks.length) return
-    ctx.strokeStyle = 'rgba(34, 211, 238, 0.9)'
-    ctx.fillStyle = 'rgba(34, 211, 238, 0.12)'
-    ctx.lineWidth = 2
-    for (const polygon of masks) {
-      if (!polygon.length) continue
-      ctx.beginPath()
-      polygon.forEach(([x, y], i) => { i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
-      ctx.closePath()
-      ctx.fill()
-      ctx.stroke()
-    }
-  }, [activeSegmentIdx, topicSegments])
+  }, [id, status])
 
   useEffect(() => {
     const video = videoRef.current
@@ -200,55 +135,12 @@ export default function TranscribePage({ params }: { params: { id: string } }) {
     if (videoRef.current) { videoRef.current.currentTime = start; videoRef.current.play() }
   }, [])
 
-  function captureFrame(): string | null {
-    const video = videoRef.current
-    if (!video || !video.videoWidth) return null
-    const tmp = document.createElement('canvas')
-    tmp.width = video.videoWidth
-    tmp.height = video.videoHeight
-    tmp.getContext('2d')!.drawImage(video, 0, 0)
-    return tmp.toDataURL('image/jpeg', 0.85).split(',')[1]
-  }
-
-  const handleCanvasClick = useCallback(async (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!correctionMode || isAnnotating || activeSegmentIdx === null) return
-    const canvas = canvasRef.current
-    const video = videoRef.current
-    if (!canvas || !video) return
-    video.pause()
-    const frameBase64 = captureFrame()
-    if (!frameBase64) return
-    const rect = canvas.getBoundingClientRect()
-    const clickX = (e.clientX - rect.left) * (video.videoWidth / rect.width)
-    const clickY = (e.clientY - rect.top) * (video.videoHeight / rect.height)
-    setIsAnnotating(true)
-    try {
-      const res = await fetch(`/api/videos/${id}/segment-annotate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ segmentIndex: activeSegmentIdx, frameBase64, clickX, clickY, isPositive: true }),
-      })
-      const data = await res.json()
-      if (Array.isArray(data.masks)) {
-        setTopicSegments((prev) => {
-          const updated = [...prev]
-          const seg = updated[activeSegmentIdx]
-          if (seg) updated[activeSegmentIdx] = { ...seg, annotationFrames: [{ time: seg.start, masks: data.masks }] }
-          return updated
-        })
-      }
-    } catch (err) {
-      console.error('[correction]', err)
-    } finally {
-      setIsAnnotating(false)
-    }
-  }, [correctionMode, isAnnotating, activeSegmentIdx, id])
-
   const isWorking = status === 'PENDING' || status === 'PROCESSING'
   const transcriptDone = status === 'DONE'
-  const annotating = annotationStatus === 'PROCESSING' || (transcriptDone && annotationStatus === 'NONE')
-  const annotationDone = annotationStatus === 'DONE'
   const totalDuration = segments.length > 0 ? segments[segments.length - 1].end : 0
+
+  void topicSegments
+  void totalDuration
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
@@ -264,11 +156,9 @@ export default function TranscribePage({ params }: { params: { id: string } }) {
           <div className="min-w-0">
             <h1 className="text-yt-text font-semibold text-sm truncate">Review &amp; Annotate</h1>
             <p className="text-yt-muted text-xs hidden sm:block">
-              {correctionMode
-                ? 'Click anywhere on the video to re-annotate the active segment'
-                : activeMainTag
-                  ? `Filtering by "${cap(activeMainTag)}"`
-                  : 'Click a segment to jump · toggle correction mode to fix annotations'}
+              {activeMainTag
+                ? `Filtering by "${cap(activeMainTag)}"`
+                : 'Click a segment to jump to that moment in the video'}
             </p>
           </div>
         </div>
@@ -279,35 +169,6 @@ export default function TranscribePage({ params }: { params: { id: string } }) {
               <span className="w-1.5 h-1.5 rounded-full bg-nb-green" />
               {segments.length} segments
             </span>
-          )}
-          {annotating && (
-            <span className="hidden sm:flex items-center gap-1.5 text-nb-sky text-xs font-medium bg-nb-sky/10 border border-nb-sky/20 px-3 py-1 rounded-xl">
-              <span className="w-2.5 h-2.5 border border-nb-sky border-t-transparent rounded-full animate-spin" />
-              Annotating…
-            </span>
-          )}
-          {annotationDone && !correctionMode && (
-            <button
-              onClick={() => setCorrectionMode(true)}
-              className="hidden sm:flex items-center gap-1.5 text-xs font-medium bg-white hover:bg-yt-hover text-yt-muted hover:text-yt-text px-3 py-1.5 rounded-xl border border-yt-border hover:border-nb-violet/30 transition-all"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-              </svg>
-              Correct annotations
-            </button>
-          )}
-          {correctionMode && (
-            <button
-              onClick={() => setCorrectionMode(false)}
-              className="flex items-center gap-1.5 text-xs font-medium bg-nb-sky/15 text-nb-sky border border-nb-sky/30 px-3 py-1.5 rounded-xl"
-            >
-              {isAnnotating
-                ? <span className="w-3 h-3 border border-nb-sky border-t-transparent rounded-full animate-spin" />
-                : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-              }
-              {isAnnotating ? 'Annotating…' : 'Exit correction'}
-            </button>
           )}
           {isWorking && (
             <span className="flex items-center gap-1.5 text-yt-muted text-xs">
@@ -334,39 +195,16 @@ export default function TranscribePage({ params }: { params: { id: string } }) {
         </div>
       </div>
 
-      {/* Correction mode banner */}
-      {correctionMode && (
-        <div className="shrink-0 flex items-center gap-2 px-5 py-2 bg-nb-sky/8 border-b border-nb-sky/20 text-nb-sky text-xs">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 shrink-0">
-            <circle cx="12" cy="12" r="10" />
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 16v-4m0-4h.01" />
-          </svg>
-          Correction mode — pause the video and click on any object to re-annotate the active segment.
-        </div>
-      )}
-
       {/* Main layout */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
 
-        {/* LEFT: Video + canvas */}
+        {/* LEFT: Video */}
         <div className="shrink-0 lg:w-[55%] xl:w-[60%] flex flex-col border-b lg:border-b-0 lg:border-r border-yt-border bg-white">
-          <div className={`relative w-full aspect-video bg-black ${correctionMode ? 'ring-1 ring-nb-sky/40' : ''}`}>
+          <div className="w-full bg-black flex justify-center">
             {videoUrl ? (
-              <>
-                <video ref={videoRef} src={videoUrl} controls className="w-full h-full" />
-                <canvas
-                  ref={canvasRef}
-                  onClick={handleCanvasClick}
-                  className={`absolute inset-0 w-full h-full transition-colors ${correctionMode ? 'cursor-crosshair' : 'pointer-events-none'}`}
-                />
-                {correctionMode && activeSegmentIdx !== null && (
-                  <div className="absolute top-3 left-3 bg-black/70 backdrop-blur text-nb-sky text-xs px-2.5 py-1 rounded-xl border border-nb-sky/30">
-                    Segment {activeSegmentIdx + 1} · {topicSegments[activeSegmentIdx]?.sam3Prompt ?? topicSegments[activeSegmentIdx]?.subTag ?? ''}
-                  </div>
-                )}
-              </>
+              <video ref={videoRef} src={videoUrl} controls className="block max-w-full max-h-[65vh]" />
             ) : (
-              <div className="w-full h-full flex items-center justify-center">
+              <div className="aspect-video w-full flex items-center justify-center">
                 <div className="w-10 h-10 border-2 border-nb-violet border-t-transparent rounded-full animate-spin" />
               </div>
             )}
@@ -374,7 +212,7 @@ export default function TranscribePage({ params }: { params: { id: string } }) {
 
           {/* Info bar */}
           {transcriptDone && segments.length > 0 && (
-            <div className="flex flex-wrap gap-4 px-5 py-3 border-t border-yt-border bg-slate-50">
+            <div className="flex flex-wrap gap-4 px-5 py-3 border-t border-yt-border bg-yt-surface2">
               <div className="flex items-center gap-1.5">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5 text-yt-muted">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
@@ -385,7 +223,7 @@ export default function TranscribePage({ params }: { params: { id: string } }) {
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5 text-yt-muted">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span className="text-yt-muted text-xs">{fmt(totalDuration)}</span>
+                <span className="text-yt-muted text-xs">{fmt(segments[segments.length - 1]?.end ?? 0)}</span>
               </div>
               {allMainTags.length > 0 && (
                 <div className="flex items-center gap-1.5">
@@ -393,14 +231,6 @@ export default function TranscribePage({ params }: { params: { id: string } }) {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.595.33a18.095 18.095 0 005.223-5.223c.542-.815.369-1.896-.33-2.595L9.568 3z" /><path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6z" />
                   </svg>
                   <span className="text-yt-muted text-xs">{allMainTags.length} phases</span>
-                </div>
-              )}
-              {annotationDone && (
-                <div className="flex items-center gap-1.5">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5 text-nb-cyan">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                  </svg>
-                  <span className="text-nb-cyan text-xs">SAM3 annotated</span>
                 </div>
               )}
             </div>
@@ -467,8 +297,7 @@ export default function TranscribePage({ params }: { params: { id: string } }) {
                 {visibleSegments.map((seg) => {
                   const isActive = activeSegmentIdx === seg.originalIdx
                   const mainTag = getMainTag(seg)
-                  const topic = topicSegments[seg.originalIdx]
-                  const hasAnnotation = (topic?.annotationFrames?.length ?? 0) > 0 && (topic?.annotationFrames?.[0]?.masks?.length ?? 0) > 0
+                  const isAction = mainTag === 'action'
 
                   return (
                     <button
@@ -477,8 +306,12 @@ export default function TranscribePage({ params }: { params: { id: string } }) {
                       onClick={() => seekTo(seg.start)}
                       className={`w-full text-left px-4 md:px-6 py-3.5 transition-colors group ${
                         isActive
-                          ? 'bg-nb-violet/5 border-l-2 border-nb-violet'
-                          : 'hover:bg-yt-hover/70 border-l-2 border-transparent'
+                          ? isAction
+                            ? 'bg-sky-50/60 border-l-2 border-nb-sky'
+                            : 'bg-nb-violet/5 border-l-2 border-nb-violet'
+                          : isAction
+                            ? 'hover:bg-sky-50/30 border-l-2 border-transparent'
+                            : 'hover:bg-yt-hover/70 border-l-2 border-transparent'
                       }`}
                     >
                       {(mainTag || seg.subTag) && (
@@ -489,23 +322,24 @@ export default function TranscribePage({ params }: { params: { id: string } }) {
                               className={`cursor-pointer inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-semibold border transition-all duration-200 ${
                                 activeMainTag === mainTag
                                   ? 'bg-emerald-50 text-emerald-700 border-emerald-300 ring-1 ring-emerald-200'
-                                  : 'bg-slate-100 text-slate-600 border-slate-200 hover:border-slate-300'
+                                  : isAction
+                                    ? 'bg-sky-50 text-sky-600 border-sky-200'
+                                    : 'bg-yt-hover text-slate-600 border-yt-border hover:border-slate-300'
                               }`}
                             >
-                              <span className={`w-1.5 h-1.5 rounded-full ${tagSolidBg(mainTag)}`} />
+                              {isAction ? (
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-2.5 h-2.5">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.867v6.266a1 1 0 01-1.447.902L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                                </svg>
+                              ) : (
+                                <span className={`w-1.5 h-1.5 rounded-full ${tagSolidBg(mainTag)}`} />
+                              )}
                               {cap(mainTag)}
                             </span>
                           )}
-                          {seg.subTag && (
+                          {!isAction && seg.subTag && (
                             <span className="text-yt-text text-[11px] font-medium bg-yt-hover border border-yt-border px-2 py-0.5 rounded-lg">
                               {seg.subTag}
-                            </span>
-                          )}
-                          {hasAnnotation && (
-                            <span className="inline-flex items-center gap-1 text-xs text-nb-cyan/60">
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                              </svg>
                             </span>
                           )}
                         </div>
@@ -513,18 +347,16 @@ export default function TranscribePage({ params }: { params: { id: string } }) {
 
                       <div className="flex gap-3 items-start">
                         <span className={`text-xs font-mono shrink-0 mt-0.5 tabular-nums transition-colors ${
-                          isActive ? 'text-nb-violet' : 'text-yt-muted group-hover:text-nb-violet'
+                          isActive
+                            ? isAction ? 'text-nb-sky' : 'text-nb-violet'
+                            : 'text-yt-muted group-hover:text-nb-violet'
                         }`}>
                           {fmt(seg.start)}
                         </span>
-                        <p className="text-yt-muted text-sm leading-relaxed">{seg.text}</p>
-                      </div>
-
-                      {isActive && topic?.sam3Prompt && (
-                        <p className="mt-2 text-xs text-nb-cyan/50 italic pl-10">
-                          SAM3: &ldquo;{topic.sam3Prompt}&rdquo;
+                        <p className={`text-sm leading-relaxed ${isAction ? 'text-sky-700 italic' : 'text-yt-muted'}`}>
+                          {seg.text}
                         </p>
-                      )}
+                      </div>
                     </button>
                   )
                 })}

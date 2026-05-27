@@ -57,6 +57,7 @@ export default function WatchTranscript({
   )
 
   if (segments.length === 0) {
+    if (!fallback) return null
     return (
       <div className="mt-4 bg-white border border-yt-border rounded-2xl p-5 shadow-card">
         <h3 className="text-yt-text text-sm font-semibold mb-3 flex items-center gap-2">
@@ -107,7 +108,7 @@ export default function WatchTranscript({
                 className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all duration-200 ${
                   activeTag === tag
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-300 ring-1 ring-emerald-200'
-                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300 hover:text-slate-800'
+                    : 'bg-yt-surface2 text-slate-600 border-yt-border hover:border-slate-300 hover:text-slate-800'
                 }`}
               >
                 {cap(tag)}
@@ -121,24 +122,31 @@ export default function WatchTranscript({
       <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
         {visible.map((seg, i) => {
           const mainTag = getMainTag(seg)
+          const isAction = mainTag === 'action'
           return (
-            <div key={seg.id ?? i} className="px-4 py-3 hover:bg-yt-hover/50 transition-colors">
-              {(mainTag || seg.subTag) && (
+            <div key={seg.id ?? i} className={`px-4 py-3 transition-colors ${isAction ? 'bg-sky-50/40 hover:bg-sky-50/70' : 'hover:bg-yt-hover/50'}`}>
+              {mainTag && (
                 <div className="flex flex-wrap items-center gap-2 mb-2">
-                  {mainTag && (
-                    <button
-                      onClick={() => setActiveTag(activeTag === mainTag ? null : mainTag)}
-                      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-semibold border transition-all duration-200 ${
-                        activeTag === mainTag
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-300 ring-1 ring-emerald-200'
-                          : 'bg-slate-100 text-slate-600 border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
+                  <button
+                    onClick={() => setActiveTag(activeTag === mainTag ? null : mainTag)}
+                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-semibold border transition-all duration-200 ${
+                      activeTag === mainTag
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300 ring-1 ring-emerald-200'
+                        : isAction
+                          ? 'bg-sky-50 text-sky-600 border-sky-200 hover:border-sky-300'
+                          : 'bg-yt-hover text-slate-600 border-yt-border hover:border-slate-300'
+                    }`}
+                  >
+                    {isAction ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-2.5 h-2.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.867v6.266a1 1 0 01-1.447.902L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                      </svg>
+                    ) : (
                       <span className={`w-1.5 h-1.5 rounded-full ${tagSolidBg(mainTag)}`} />
-                      {cap(mainTag)}
-                    </button>
-                  )}
-                  {seg.subTag && (
+                    )}
+                    {cap(mainTag)}
+                  </button>
+                  {!isAction && seg.subTag && (
                     <span className="text-yt-text text-[11px] font-medium bg-yt-hover border border-yt-border px-2 py-0.5 rounded-lg">
                       {seg.subTag}
                     </span>
@@ -147,8 +155,8 @@ export default function WatchTranscript({
               )}
 
               <div className="flex gap-2.5 items-start">
-                <span className="text-nb-violet font-mono text-xs shrink-0 mt-0.5 tabular-nums">{fmt(seg.start)}</span>
-                <p className="text-yt-muted text-sm leading-relaxed">{seg.text}</p>
+                <span className={`font-mono text-xs shrink-0 mt-0.5 tabular-nums ${isAction ? 'text-nb-sky' : 'text-nb-violet'}`}>{fmt(seg.start)}</span>
+                <p className={`text-sm leading-relaxed ${isAction ? 'text-sky-700 italic' : 'text-yt-muted'}`}>{seg.text}</p>
               </div>
             </div>
           )

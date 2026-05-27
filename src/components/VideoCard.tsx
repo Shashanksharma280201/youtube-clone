@@ -15,7 +15,7 @@ export default function VideoCard({ id, title, thumbnailUrl, views, createdAt, u
   return (
     <Link href={`/watch/${id}`} className="group block">
       {/* Thumbnail */}
-      <div className="relative w-full aspect-video rounded-xl overflow-hidden mb-3 bg-slate-100 shadow-card group-hover:shadow-card-hover transition-all duration-300">
+      <div className="relative w-full aspect-video rounded-xl overflow-hidden mb-3 bg-yt-hover shadow-card group-hover:shadow-card-hover transition-all duration-300">
         {thumbnailUrl ? (
           <>
             {/* Real thumbnail from first chapter */}

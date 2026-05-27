@@ -11,7 +11,7 @@
 }
 
 body {
-  background-color: #f8fafc;
+  background-color: #ECEEF3;
   color: #0f172a;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -23,14 +23,14 @@ body {
   width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: #E3E7F2;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #b0b9d4;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #8891b0;
 }
 
 .scrollbar-hide {
@@ -55,7 +55,7 @@ body {
   100% { background-position:  200% 0; }
 }
 .shimmer {
-  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background: linear-gradient(90deg, #E3E7F2 25%, #CBD3E8 50%, #E3E7F2 75%);
   background-size: 200% 100%;
   animation: shimmer 1.6s infinite;
 }

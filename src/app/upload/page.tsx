@@ -168,10 +168,10 @@ export default function UploadPage() {
                 onDrop={(e) => { e.preventDefault(); setIsDragging(false); addFiles(e.dataTransfer.files) }}
                 className={`relative rounded-2xl border-2 border-dashed flex flex-col items-center justify-center text-center transition-all duration-200 min-h-[280px] lg:min-h-[340px] p-8 ${
                   isUploading
-                    ? 'border-slate-200 opacity-50 cursor-not-allowed bg-slate-50'
+                    ? 'border-yt-border opacity-50 cursor-not-allowed bg-yt-surface2'
                     : isDragging
                     ? 'border-nb-violet bg-nb-violet/5 scale-[1.01] cursor-copy'
-                    : 'border-slate-200 hover:border-nb-violet/50 hover:bg-slate-50 cursor-pointer'
+                    : 'border-yt-border hover:border-nb-violet/50 hover:bg-yt-surface2 cursor-pointer'
                 }`}
               >
                 <input
@@ -185,7 +185,7 @@ export default function UploadPage() {
                 />
                 <div className={`mb-5 transition-all duration-200 ${isDragging ? 'scale-110' : ''}`}>
                   <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto transition-all duration-200 ${
-                    isDragging ? 'bg-nb-violet/10 border border-nb-violet/30' : 'bg-slate-100 border border-slate-200'
+                    isDragging ? 'bg-nb-violet/10 border border-nb-violet/30' : 'bg-yt-hover border border-yt-border'
                   }`}>
                     <svg viewBox="0 0 24 24" fill="none" stroke={isDragging ? '#7c3aed' : '#94a3b8'} strokeWidth="1.5" className="w-8 h-8">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
@@ -198,7 +198,7 @@ export default function UploadPage() {
                 <p className="text-yt-muted text-sm mb-5">or click to browse your files</p>
                 <div className="flex flex-wrap justify-center gap-1.5">
                   {['MP4', 'WebM', 'MOV', 'AVI', 'MKV'].map((fmt) => (
-                    <span key={fmt} className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-500">
+                    <span key={fmt} className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-yt-hover border border-yt-border text-slate-500">
                       {fmt}
                     </span>
                   ))}
@@ -213,7 +213,7 @@ export default function UploadPage() {
                   { icon: '🏷', label: 'GPT Tagging', desc: 'Phases + subtitles per segment' },
                   { icon: '🖼', label: 'Auto chapters', desc: 'Thumbnails extracted per chapter' },
                 ].map((step) => (
-                  <div key={step.label} className="flex items-center gap-3 px-3.5 py-3 rounded-xl bg-slate-50 border border-slate-100">
+                  <div key={step.label} className="flex items-center gap-3 px-3.5 py-3 rounded-xl bg-yt-surface2 border border-yt-border">
                     <span className="text-xl shrink-0">{step.icon}</span>
                     <div>
                       <p className="text-yt-text text-xs font-semibold">{step.label}</p>
@@ -230,7 +230,7 @@ export default function UploadPage() {
                   className={`w-full flex items-center justify-between gap-3 px-3.5 py-3 rounded-xl border transition-all duration-200 ${
                     sam3Enabled
                       ? 'bg-cyan-50 border-cyan-200'
-                      : 'bg-slate-50 border-slate-100 hover:border-slate-200'
+                      : 'bg-yt-surface2 border-yt-border hover:border-slate-300'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -254,7 +254,7 @@ export default function UploadPage() {
 
               {entries.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center gap-4 text-center py-20">
-                  <div className="w-20 h-20 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center">
+                  <div className="w-20 h-20 rounded-2xl bg-yt-hover border border-yt-border flex items-center justify-center">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-9 h-9 text-slate-400">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z" />
                     </svg>
@@ -286,13 +286,13 @@ export default function UploadPage() {
                         }`}
                       >
                         {/* Thumbnail */}
-                        <div className="relative w-full aspect-video bg-slate-100 overflow-hidden">
+                        <div className="relative w-full aspect-video bg-yt-hover overflow-hidden">
                           {entry.previewUrl === undefined && <div className="absolute inset-0 shimmer" />}
                           {entry.previewUrl && (
                             <img src={entry.previewUrl} alt={entry.title} className="w-full h-full object-cover" />
                           )}
                           {entry.previewUrl === null && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-slate-100">
+                            <div className="absolute inset-0 flex items-center justify-center bg-yt-hover">
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" className="w-12 h-12 text-slate-300">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z" />
                               </svg>
