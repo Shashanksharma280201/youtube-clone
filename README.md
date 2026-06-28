@@ -1,171 +1,114 @@
 # YouTube Clone
 
-A full-stack video sharing platform where users can create accounts, upload videos, and watch videos uploaded by other users.
+A full-stack video platform. Users upload videos, and an **AI pipeline** auto-transcribes them, splits them into searchable chapters (even for silent/no-speech parts), and generates thumbnails — then anyone can watch, search chapters in any language, like, and comment.
 
 ---
 
-## Features
+## How it works (end to end)
 
-- User registration and login with secure password hashing
-- Upload videos with a title and description
-- Home page displaying all videos from all users
-- Video watch page with an HTML5 player, view count, and like count
-- Fully responsive dark UI
-- Automatic deployment via GitHub and Vercel CI/CD
+```mermaid
+flowchart TD
+    A([User signs up / logs in]) --> B[Upload a video]
+    B -->|browser uploads straight to S3| C[(AWS S3)]
+    B -->|create DB row · status PENDING| D[(Neon Postgres)]
+    B --> E{{AI Processing Pipeline}}
+    E -->|status DONE| D
+    F([Anyone opens Watch page]) --> G[Player + Chapters + Transcript]
+    G -->|search a chapter in any language| H[Chapter found & jumps to it]
+    G --> I[Like · View count · Comments]
+```
+
+Auth uses **NextAuth + bcrypt**. The upload is a **presigned URL**, so the big video file goes from the browser **directly to S3** (the server never holds it).
+
+---
+
+## The AI Processing Pipeline
+
+Runs once after upload (`/api/videos/[id]/transcribe`). This is the heart of the project:
+
+```mermaid
+flowchart LR
+    S1[1 · Pull video from S3<br/>ffmpeg extracts audio] --> S2[2 · Groq Whisper<br/>speech → timed segments]
+    S2 --> S3[3 · GPT-4o-mini<br/>tag segments into chapters]
+    S2 --> S4[4 · Find silent gaps<br/>GPT-4o Vision describes<br/>what's happening on screen]
+    S3 --> S5[5 · ffmpeg grabs a<br/>thumbnail per chapter → S3]
+    S4 --> S5
+    S5 --> S6[6 · Save chapters +<br/>transcript to DB]
+```
+
+| Step | What happens |
+|------|--------------|
+| 1 | Download the video from S3, extract a 16kHz mono audio track with **ffmpeg**. |
+| 2 | **Groq Whisper** transcribes speech into time-stamped segments (hallucinated noise is filtered out). |
+| 3 | **GPT-4o-mini** reads the transcript, picks the video's phases, and tags each segment → these become **chapters**. |
+| 4 | Silent / no-speech stretches are detected (ffmpeg `silencedetect` + Whisper gaps). **GPT-4o Vision** looks at a frame and writes what the person is doing — so even wordless videos get chapters. |
+| 5 | **ffmpeg** grabs one thumbnail per chapter and uploads it to S3. |
+| 6 | Chapters + full transcript are saved to Postgres; status flips to **DONE**. The watch page was polling and now renders everything. |
+
+**Extra:** multilingual **chapter search** — GPT-4o-mini matches your query to a chapter, translating any language (Hindi, Hinglish, etc.) to English first.
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology | Reason |
-|---|---|---|
-| Framework | Next.js 14 (App Router) | Full-stack in one codebase, React-based |
-| Language | TypeScript | Type safety, better developer experience |
-| Database | PostgreSQL via Neon | Scalable, relational, free tier available |
-| ORM | Prisma | Type-safe database queries without raw SQL |
-| Auth | NextAuth.js | Handles sessions, JWT, and credentials securely |
-| Storage | Vercel Blob (prod) / Local filesystem (dev) | Simple, scalable video storage |
-| Styling | Tailwind CSS | Utility-first, fast to build with |
-| Hosting | Vercel | Native Next.js support, auto-deploy from GitHub |
+| Layer | Tech |
+|-------|------|
+| Framework / UI | Next.js 14 (App Router), TypeScript, Tailwind CSS |
+| Auth | NextAuth.js + bcrypt |
+| Database | Neon PostgreSQL via Prisma |
+| Video storage | AWS S3 (presigned uploads) |
+| Audio/Video | ffmpeg-static (audio extract, silence detect, thumbnails) |
+| AI | Groq Whisper (transcription) · OpenAI GPT-4o & 4o-mini (tagging, vision, search) |
+| Hosting | Vercel (auto-deploy from GitHub) |
 
 ---
 
-## Local Development Setup
+## Data Model
 
-### Prerequisites
+```mermaid
+erDiagram
+    User  ||--o{ Video   : uploads
+    User  ||--o{ Like    : gives
+    User  ||--o{ Comment : writes
+    Video ||--o{ Like    : receives
+    Video ||--o{ Comment : receives
+```
 
-- Node.js 18 or higher
-- A Neon account (free) for the PostgreSQL database
+`Video` also stores `transcript`, `transcriptSegments`, `topicSegments` (chapters), and a `transcriptStatus` of `PENDING → PROCESSING → DONE`.
 
-### Steps
+---
 
-1. Clone the repository
+## Local Setup
 
 ```bash
 git clone https://github.com/Shashanksharma280201/youtube-clone.git
 cd youtube-clone
-```
-
-2. Install dependencies
-
-```bash
 npm install
+npx prisma generate && npx prisma db push
+npm run dev          # → http://localhost:3000
 ```
 
-3. Set up environment variables
-
-Create a `.env.local` file in the root:
-
-```
-DATABASE_URL="your_neon_connection_string"
-NEXTAUTH_SECRET="your_random_secret"
-NEXTAUTH_URL="http://localhost:3000"
-```
-
-Create a `.env` file for Prisma CLI:
-
-```
-DATABASE_URL="your_neon_connection_string"
-```
-
-To generate a secure NEXTAUTH_SECRET:
+Create `.env.local`:
 
 ```bash
-openssl rand -base64 32
-```
-
-4. Set up the database
-
-```bash
-npx prisma generate
-npx prisma db push
-```
-
-5. Create the local uploads folder
-
-```bash
-mkdir -p public/uploads/videos
-```
-
-6. Start the development server
-
-```bash
-npm run dev
-```
-
-Open http://localhost:3000
-
-When running locally without a `BLOB_READ_WRITE_TOKEN`, uploaded videos are saved to `public/uploads/videos/` on your machine.
-
----
-
-## Deploying to Vercel
-
-1. Push the repository to GitHub
-2. Go to vercel.com, create a new project, and import the GitHub repository
-3. In the Vercel project dashboard, go to Storage and create a Blob store named `video-uploads`
-4. Add the following environment variables in Vercel Settings:
-
-```
-DATABASE_URL
-NEXTAUTH_SECRET
-NEXTAUTH_URL        (set to your Vercel domain, e.g. https://your-app.vercel.app)
-BLOB_READ_WRITE_TOKEN
-```
-
-5. Deploy. Every subsequent push to the main branch will trigger an automatic redeployment.
-
----
-
-## Project Structure
-
-```
-src/
-  app/
-    api/
-      auth/[...nextauth]/   NextAuth handler
-      register/             User registration endpoint
-      upload/               Video upload endpoint
-      videos/               Fetch all videos or single video
-    login/                  Login page
-    register/               Register page
-    upload/                 Upload page (protected)
-    watch/[id]/             Video watch page
-    layout.tsx              Root layout with Navbar
-    page.tsx                Home page with video grid
-  components/
-    Navbar.tsx              Top navigation bar
-    VideoCard.tsx           Individual video card
-    VideoGrid.tsx           Responsive grid of video cards
-    SessionProvider.tsx     NextAuth session wrapper
-  lib/
-    auth.ts                 NextAuth configuration
-    prisma.ts               Prisma client singleton
-    utils.ts                Helper functions (timeAgo, formatViews)
-  types/
-    next-auth.d.ts          Extended session types
-prisma/
-  schema.prisma             Database schema (User, Video, Like, Comment)
+DATABASE_URL=          # Neon connection string
+NEXTAUTH_SECRET=       # openssl rand -base64 32
+NEXTAUTH_URL=http://localhost:3000
+AWS_ACCESS_KEY_ID=     # S3 video storage
+AWS_SECRET_ACCESS_KEY=
+AWS_REGION=
+AWS_S3_BUCKET=
+GROQ_API_KEY=          # Whisper transcription
+OPENAI_API_KEY=        # tagging, vision, chapter search
 ```
 
 ---
 
-## Database Schema
-
-- User — stores name, email, hashed password
-- Video — stores title, description, video URL, view count, linked to uploader
-- Like — links a user to a video they liked, unique per user per video
-- Comment — stores comment text, linked to user and video
-
----
-
-## Available Scripts
+## Scripts
 
 ```bash
-npm run dev          Start development server
-npm run build        Build for production
-npm run start        Start production server
-npm run db:push      Push schema changes to database
-npm run db:generate  Regenerate Prisma client
-npm run db:studio    Open Prisma Studio (visual database browser)
+npm run dev        # dev server
+npm run build      # production build
+npm run db:push    # apply schema to DB
+npm run db:studio  # visual DB browser
 ```

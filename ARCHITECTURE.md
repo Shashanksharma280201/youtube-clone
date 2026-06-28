@@ -6,172 +6,78 @@
 | Frontend | Next.js 14 App Router · Tailwind CSS |
 | Auth | NextAuth.js (email + bcrypt) |
 | Database | Neon PostgreSQL via Prisma |
-| File Storage | Local filesystem (`public/uploads/`) |
-| Transcription | Groq Whisper (LPU, ~10s) |
-| AI Tagging | OpenAI GPT-4o-mini |
-| Video Processing | ffmpeg-static (audio extract + thumbnails) |
+| File Storage | AWS S3 (browser uploads directly via presigned URL) |
+| Transcription | Groq Whisper (`whisper-large-v3-turbo`) |
+| Tagging / Search / Vision | OpenAI GPT-4o-mini · GPT-4o |
+| Video Processing | ffmpeg-static (audio · silence detect · thumbnails) |
 
 ---
 
-## Full System Flow
+## System Flow (top → bottom)
 
 ```mermaid
 flowchart TD
-    Browser(["👤 Browser"])
-
-    subgraph Pages["Pages (Client)"]
-        PHome["/  · Home feed"]
-        PUpload["/upload  · File picker + preview"]
-        PTranscribe["/transcribe/[id]  · Live preview + transcript"]
-        PWatch["/watch/[id]  · Watch + chapters"]
-        PLogin["/login · /register"]
-    end
-
-    subgraph API["API Routes (Server)"]
-        AUpload["/api/upload  POST"]
-        ATranscribe["/api/videos/[id]/transcribe  POST"]
-        ATranscript["/api/videos/[id]/transcript  GET"]
-        AVideos["/api/videos  GET"]
-        AVideo["/api/videos/[id]  GET"]
-        ALikes["/api/videos/[id]/likes  GET·POST·DELETE"]
-        AView["/api/videos/[id]/view  PATCH"]
-        AAuth["/api/auth/[...nextauth]"]
-        ARegister["/api/register  POST"]
-    end
-
-    subgraph Pipeline["Transcription Pipeline (inside /api/transcribe)"]
-        P1["1 · ffmpeg\nextract audio → 16kHz mono MP3"]
-        P2["2 · Groq Whisper\naudio → word-timestamped segments"]
-        P3["3 · GPT-4o-mini\nbatch tag each segment\n(mainTag + subTag)"]
-        P4["4 · ffmpeg × N\nextract 1 frame per chapter → JPEG thumbnail"]
-        P5["5 · Save results to DB\n(transcriptSegments + topicSegments JSON)"]
-    end
-
-    subgraph Storage["Storage"]
-        FS["Local Filesystem\npublic/uploads/videos/\npublic/uploads/thumbnails/"]
-        DB[("Neon PostgreSQL\nUser · Video · Like · Comment")]
-    end
-
-    subgraph External["External APIs"]
-        Groq["Groq API\nwhisper-large-v3"]
-        OpenAI["OpenAI API\ngpt-4o-mini"]
-    end
-
-    %% Page → API wiring
-    Browser --> PUpload
-    PUpload -- "POST multipart/form-data" --> AUpload
-    AUpload -- "write file" --> FS
-    AUpload -- "create Video row (PENDING)" --> DB
-    AUpload -- "returns {id}" --> PUpload
-    PUpload -- "redirect → /transcribe/[id]" --> PTranscribe
-
-    PTranscribe -- "POST (fire once)" --> ATranscribe
-    PTranscribe -- "GET poll every 2s" --> ATranscript
-    ATranscript -- "read transcriptStatus + segments" --> DB
-    ATranscript --> PTranscribe
-
-    ATranscribe --> P1
-    P1 -- "read video" --> FS
-    P1 --> P2
-    P2 -- "audio file" --> Groq
-    Groq -- "segments[]" --> P2
-    P2 --> P3
-    P3 -- "batch segments" --> OpenAI
-    OpenAI -- "tagged segments[]" --> P3
-    P3 --> P4
-    P4 -- "write thumbnails" --> FS
-    P4 --> P5
-    P5 -- "update Video row (DONE)" --> DB
-
-    PTranscribe -- "Watch button → /watch/[id]" --> PWatch
-    PHome -- "click video card" --> PWatch
-    PWatch -- "GET video + segments" --> AVideo
-    AVideo -- "read" --> DB
-    PWatch -- "PATCH (increment)" --> AView
-    AView --> DB
-    PWatch -- "GET · POST · DELETE" --> ALikes
-    ALikes --> DB
-
-    Browser --> PHome
-    PHome -- "GET /api/videos" --> AVideos
-    AVideos -- "read" --> DB
-
-    Browser --> PLogin
-    PLogin -- "POST credentials" --> AAuth
-    PLogin -- "POST new user" --> ARegister
-    AAuth --> DB
-    ARegister -- "bcrypt hash + insert" --> DB
+    A([User logs in]) --> B([Upload a video])
+    B --> C[Browser uploads file straight to S3<br/>via a presigned URL]
+    C --> D[DB row created · status = PENDING]
+    D --> E{{AI Pipeline runs}}
+    E --> F[Chapters + transcript saved<br/>status = DONE]
+    F --> G([Watch page])
+    G --> H[Player + chapters + transcript]
+    G --> I[Search a chapter in any language]
+    G --> J[Like · View · Comment]
 ```
+
+While the pipeline runs, the page polls every 2s until status is `DONE`.
+
+---
+
+## The AI Pipeline (top → bottom)
+
+```mermaid
+flowchart TD
+    P1[1 · Download video from S3<br/>ffmpeg extracts audio] --> P2[2 · Groq Whisper<br/>speech → timed segments]
+    P2 --> P3[3 · GPT-4o-mini<br/>tag spoken segments into chapters]
+    P2 --> P4[4 · Detect silent gaps<br/>GPT-4o Vision describes the frame]
+    P3 --> P5[5 · ffmpeg<br/>1 thumbnail per chapter → S3]
+    P4 --> P5
+    P5 --> P6[6 · Save transcript + chapters to DB]
+```
+
+| Step | What it does |
+|------|--------------|
+| 1 | Pull the video from S3, extract a 16kHz mono audio track. |
+| 2 | Groq Whisper transcribes speech into timed segments (noise/hallucinations filtered). |
+| 3 | GPT-4o-mini picks the video's phases and tags each segment → **chapters**. |
+| 4 | Silent stretches get a frame described by GPT-4o Vision → so wordless videos also get chapters. |
+| 5 | ffmpeg grabs one thumbnail per chapter and uploads it to S3. |
+| 6 | Everything is saved to Postgres; status becomes `DONE`. |
 
 ---
 
 ## Data Model
 
 ```mermaid
-erDiagram
-    User {
-        string id PK
-        string email
-        string name
-        string password
-        datetime createdAt
-    }
-    Video {
-        string id PK
-        string title
-        string description
-        string blobUrl
-        string userId FK
-        int views
-        enum transcriptStatus
-        string transcript
-        json transcriptSegments
-        json topicSegments
-        datetime createdAt
-    }
-    Like {
-        string id PK
-        string userId FK
-        string videoId FK
-        datetime createdAt
-    }
-    Comment {
-        string id PK
-        string text
-        string userId FK
-        string videoId FK
-        datetime createdAt
-    }
-
-    User ||--o{ Video : uploads
-    User ||--o{ Like : gives
-    User ||--o{ Comment : writes
-    Video ||--o{ Like : receives
-    Video ||--o{ Comment : receives
+flowchart TD
+    User --> |uploads| Video
+    User --> |gives| Like
+    User --> |writes| Comment
+    Video --> |has| Like
+    Video --> |has| Comment
 ```
+
+`Video.transcriptStatus`: `PENDING → PROCESSING → DONE` (or `FAILED`).
+`transcriptSegments` = full timed transcript · `topicSegments` = the chapters (tag, time range, thumbnail).
 
 ---
 
-## Upload → Watch in 60 seconds
+## Key files
 
-```
-User selects file
-  → browser extracts thumbnail frame (canvas API) for preview
-  → POST /api/upload → saved to public/uploads/videos/ + DB row created
-  → redirect to /transcribe/[id]
-
-/transcribe/[id] loads
-  → POST /api/transcribe fires (once)
-  → page polls GET /api/transcript every 2s
-
-Pipeline (max 300s):
-  ffmpeg extracts audio
-  → Groq Whisper → N timed segments
-  → GPT-4o-mini tags each segment (mainTag + subTag) in batches of 20
-  → ffmpeg extracts 1 JPEG thumbnail per chapter (up to 10 parallel)
-  → DB updated: status=DONE, transcriptSegments, topicSegments
-
-Poll detects DONE → page shows transcript + chapter grid
-
-User clicks "Watch" → /watch/[id] → full player + chapter sidebar
-```
+| File | Role |
+|------|------|
+| `src/app/api/upload/route.ts` | Presigned S3 URL + create `Video` row |
+| `src/app/api/videos/[id]/transcribe/route.ts` | The full AI pipeline (steps 1–6) |
+| `src/app/api/videos/[id]/transcript/route.ts` | Status / transcript polling |
+| `src/app/api/videos/[id]/search-chapter/route.ts` | Multilingual chapter search |
+| `src/lib/s3.ts` | S3 helpers (presign · upload · download) |
+| `src/lib/auth.ts` · `src/lib/prisma.ts` | NextAuth config · Prisma client |
