@@ -17,7 +17,7 @@
     --secondary: 0 0% 15%;
     --secondary-foreground: 0 0% 98%;
     --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 64%;
+    --muted-foreground: 0 0% 75%;   /* brighter for readable secondary text on dark bg */
     --accent: 0 0% 18%;
     --accent-foreground: 0 0% 98%;
     --destructive: 0 72% 51%;
