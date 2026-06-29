@@ -28,3 +28,5 @@ public/uploads/videos/*
 skills-lock.json
 tsconfig.tsbuildinfo
 .vercel
+scratch/
+*.mp4

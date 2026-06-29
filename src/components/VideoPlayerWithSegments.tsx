@@ -276,7 +276,7 @@ export default function VideoPlayerWithSegments({
                       {seg.subTag || cap(seg.mainTag)}
                     </p>
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${tagColor(seg.mainTag)}`}>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium border bg-white text-black border-slate-300">
                         {cap(seg.mainTag)}
                       </span>
                     </div>

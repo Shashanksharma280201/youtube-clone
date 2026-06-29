@@ -4,18 +4,22 @@ import VideoGrid from '@/components/VideoGrid'
 
 const getVideos = unstable_cache(
   async (q?: string) => {
-    const videos = await prisma.video.findMany({
+    // Select ONLY the columns the grid needs. Pulling transcript/transcriptSegments/
+    // topicSegments here produced a 2MB+ payload that blew past unstable_cache's 2MB
+    // limit (so it never cached) and took ~10s per home-page load. thumbnailUrl is now
+    // a denormalized column set by the transcription workflow.
+    return prisma.video.findMany({
       where: q ? { title: { contains: q, mode: 'insensitive' } } : undefined,
       orderBy: { createdAt: 'desc' },
-      include: { user: { select: { name: true } } },
-    })
-
-    return videos.map((v) => {
-      const segments = Array.isArray(v.topicSegments)
-        ? (v.topicSegments as { thumbnailPath?: string | null }[])
-        : []
-      const thumbnailUrl = segments.find((s) => s.thumbnailPath)?.thumbnailPath ?? null
-      return { ...v, thumbnailUrl }
+      select: {
+        id: true,
+        title: true,
+        blobUrl: true,
+        views: true,
+        createdAt: true,
+        thumbnailUrl: true,
+        user: { select: { name: true } },
+      },
     })
   },
   ['videos'],

@@ -51,6 +51,9 @@ model Video {
   transcript         String?
   transcriptSegments Json?
   topicSegments      Json?
+  // Denormalized first-chapter thumbnail for the home feed, so the grid query
+  // never has to pull the heavy transcript/topicSegments JSON. Set in saveStep.
+  thumbnailUrl       String?
   annotationStatus   AnnotationStatus @default(NONE)
   sam3Enabled        Boolean          @default(false)
 }
