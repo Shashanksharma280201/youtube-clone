@@ -38,8 +38,8 @@
 }
 
 body {
-  background-color: #ECEEF3;
-  color: #0f172a;
+  background-color: hsl(0 0% 7%);   /* dark-neutral base (matches --background) */
+  color: hsl(0 0% 98%);             /* near-white text (matches --foreground) */
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
