@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import SessionProvider from '@/components/SessionProvider'
 import Navbar from '@/components/Navbar'
+import { Toaster } from '@/components/ui/sonner'
 
 export const metadata: Metadata = {
   title: 'NebulaIQ',
@@ -16,6 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Navbar />
           <main className="pt-14">{children}</main>
         </SessionProvider>
+        <Toaster />
       </body>
     </html>
   )
