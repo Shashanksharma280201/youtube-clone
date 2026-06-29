@@ -43,7 +43,12 @@ function runFfmpeg(
 
 export async function probeDuration(source: string): Promise<number> {
   try {
-    const { stderr } = await runFfmpeg(["-i", source, "-f", "null", "-"], 60_000);
+    // `ffmpeg -i <file>` prints Duration to stderr and exits IMMEDIATELY (with a
+    // non-zero code, since no output file is given) — it reads container metadata
+    // without decoding. Do NOT add `-f null -` here: that decodes the entire video,
+    // which takes minutes on a long video and times out in a serverless function,
+    // returning 0 and silently breaking the whole pipeline.
+    const { stderr } = await runFfmpeg(["-i", source], 60_000);
     const m = stderr.match(/Duration:\s+(\d+):(\d+):([\d.]+)/);
     if (!m) return 0;
     return parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseFloat(m[3]);
