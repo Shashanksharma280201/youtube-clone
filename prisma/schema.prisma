@@ -46,6 +46,9 @@ model Video {
   // Denormalized first-chapter thumbnail for the home feed, so the grid query
   // never has to pull the heavy transcript/topicSegments JSON. Set in saveStep.
   thumbnailUrl       String?
+  // Structured machine-maintenance guide (intro, preventive maintenance, error
+  // codes, troubleshooting FAQs, safety, tools/parts, specs) — see DomainData.
+  domainData         Json?
 }
 
 model Like {

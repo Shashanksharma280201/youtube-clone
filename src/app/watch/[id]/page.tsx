@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import WatchLayout from '@/components/WatchLayout'
+import { asDomainData } from '@/lib/pipeline/domain-types'
 
 export const dynamic = 'force-dynamic'
 
@@ -64,6 +65,7 @@ export default async function WatchPage({ params }: { params: { id: string } }) 
       transcriptStatus={video.transcriptStatus}
       transcript={video.transcript}
       transcriptSegments={video.transcriptSegments}
+      domainData={asDomainData(video.domainData)}
     />
   )
 }

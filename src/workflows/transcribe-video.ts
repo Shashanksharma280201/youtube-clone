@@ -21,6 +21,7 @@ import { buildSilentSegments } from "@/lib/pipeline/vision";
 import { analyzeVideo, tagSegments } from "@/lib/pipeline/tag";
 import { generateVideoSegments } from "@/lib/pipeline/thumbnails";
 import { consolidateChapters } from "@/lib/pipeline/consolidate";
+import { extractDomainData, EMPTY_DOMAIN, type DomainData } from "@/lib/pipeline/domain";
 import {
   SEGMENT_SECS,
   SILENCE_CHUNK_SECS,
@@ -199,11 +200,28 @@ async function framesStep(
   return { transcript, transcriptSegments, topicSegments };
 }
 
+// Machine-maintenance domain extraction: turn the transcript + chapters into a
+// structured guide (error codes, PM, troubleshooting FAQs, safety, tools, specs).
+async function domainStep(
+  transcriptSegments: TaggedSegment[],
+  topicSegments: VideoSegment[],
+  duration: number,
+): Promise<DomainData> {
+  "use step";
+  try {
+    return await extractDomainData(transcriptSegments, topicSegments, duration);
+  } catch (err) {
+    console.error("[transcribe-workflow] domain extraction failed:", err);
+    return EMPTY_DOMAIN;
+  }
+}
+
 async function saveStep(
   videoId: string,
   transcript: string,
   transcriptSegments: TaggedSegment[],
   topicSegments: VideoSegment[],
+  domainData: DomainData,
 ): Promise<void> {
   "use step";
   const thumbnailUrl = topicSegments.find((s) => s.thumbnailPath)?.thumbnailPath ?? null;
@@ -215,6 +233,8 @@ async function saveStep(
       transcriptSegments,
       topicSegments: topicSegments.length > 0 ? topicSegments : undefined,
       thumbnailUrl,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      domainData: domainData as any,
     },
   });
 }
@@ -247,7 +267,10 @@ export async function transcribeVideoWorkflow(videoId: string): Promise<{ status
       videoId, key, allWindows, spokenSegments, duration,
     );
 
-    await saveStep(videoId, transcript, transcriptSegments, topicSegments);
+    // Machine-maintenance guide extraction (runs off the transcript + chapters).
+    const domainData = await domainStep(transcriptSegments, topicSegments, duration);
+
+    await saveStep(videoId, transcript, transcriptSegments, topicSegments, domainData);
     return { status: "DONE" };
   } catch (err) {
     const message = (err as Error)?.message ?? "An error occurred during transcription. Please try again.";

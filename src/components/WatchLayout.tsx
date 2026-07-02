@@ -5,6 +5,8 @@ import { tagColor } from '@/lib/tagColor'
 import LikeButton from '@/components/LikeButton'
 import DeleteVideoButton from '@/components/DeleteVideoButton'
 import WatchTranscript from '@/components/WatchTranscript'
+import MachineGuide from '@/components/MachineGuide'
+import type { DomainData } from '@/lib/pipeline/domain-types'
 import { timeAgo, formatViews } from '@/lib/utils'
 
 type VideoSegment = {
@@ -31,6 +33,7 @@ interface WatchLayoutProps {
   transcriptStatus: string
   transcript: string | null
   transcriptSegments: unknown
+  domainData: DomainData | null
 }
 
 const SEARCH_PLACEHOLDERS = [
@@ -143,6 +146,7 @@ export default function WatchLayout({
   transcriptStatus,
   transcript,
   transcriptSegments,
+  domainData,
 }: WatchLayoutProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const cardRefs = useRef<(HTMLButtonElement | null)[]>([])
@@ -156,6 +160,8 @@ export default function WatchLayout({
   const [searchResults, setSearchResults] = useState<Array<{ index: number; segment: typeof segments[0] }>>([])
   const [placeholderIdx, setPlaceholderIdx] = useState(0)
   const [searchFocused, setSearchFocused] = useState(false)
+  const hasGuide = !!domainData
+  const [leftTab, setLeftTab] = useState<'guide' | 'transcript'>(hasGuide ? 'guide' : 'transcript')
 
   useEffect(() => {
     fetch(`/api/videos/${videoId}/view`, { method: 'PATCH' }).catch(() => {})
@@ -278,9 +284,35 @@ export default function WatchLayout({
             </div>
           )}
 
-          {/* Transcript */}
-          {transcriptStatus === 'DONE' && (transcript || (Array.isArray(transcriptSegments) && (transcriptSegments as unknown[]).length > 0)) && (
-            <WatchTranscript segments={transcriptSegments} fallback={transcript} />
+          {/* Machine Guide + Transcript */}
+          {transcriptStatus === 'DONE' && (hasGuide || transcript || (Array.isArray(transcriptSegments) && (transcriptSegments as unknown[]).length > 0)) && (
+            <div className="mt-4">
+              {hasGuide && (
+                <div className="flex gap-1 border-b border-yt-border">
+                  <button
+                    onClick={() => setLeftTab('guide')}
+                    className={`px-4 py-2.5 text-sm font-semibold -mb-px border-b-2 transition-colors ${
+                      leftTab === 'guide' ? 'border-nb-violet text-nb-violet' : 'border-transparent text-yt-muted hover:text-yt-text'
+                    }`}
+                  >
+                    Machine Guide
+                  </button>
+                  <button
+                    onClick={() => setLeftTab('transcript')}
+                    className={`px-4 py-2.5 text-sm font-semibold -mb-px border-b-2 transition-colors ${
+                      leftTab === 'transcript' ? 'border-nb-violet text-nb-violet' : 'border-transparent text-yt-muted hover:text-yt-text'
+                    }`}
+                  >
+                    Transcript
+                  </button>
+                </div>
+              )}
+              {domainData && leftTab === 'guide' ? (
+                <MachineGuide data={domainData} onSeek={seekTo} />
+              ) : (
+                <WatchTranscript segments={transcriptSegments} fallback={transcript} />
+              )}
+            </div>
           )}
         </div>
 
