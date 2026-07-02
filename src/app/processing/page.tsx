@@ -6,12 +6,10 @@ import Link from 'next/link'
 import { tagColor } from '@/lib/tagColor'
 
 type TranscriptStatus = 'NONE' | 'PENDING' | 'PROCESSING' | 'DONE' | 'FAILED'
-type AnnotationStatus = 'NONE' | 'PENDING' | 'PROCESSING' | 'DONE' | 'FAILED'
 
 type VideoState = {
   title: string
   transcriptStatus: TranscriptStatus
-  annotationStatus: AnnotationStatus
   segments: { tags?: string[] }[]
   failureMessage: string | null
 }
@@ -23,14 +21,12 @@ function VideoCard({ id }: { id: string }) {
   const [state, setState] = useState<VideoState>({
     title: '',
     transcriptStatus: 'PENDING',
-    annotationStatus: 'NONE',
     segments: [],
     failureMessage: null,
   })
 
   function applyData(data: {
     status?: TranscriptStatus
-    annotationStatus?: AnnotationStatus
     segments?: { tags?: string[] }[] | null
     message?: string | null
     transcript?: string | null
@@ -38,7 +34,6 @@ function VideoCard({ id }: { id: string }) {
     setState((prev) => {
       const next = { ...prev }
       if (data.status) next.transcriptStatus = data.status
-      if (data.annotationStatus != null) next.annotationStatus = data.annotationStatus
       if (Array.isArray(data.segments) && data.segments.length > 0) next.segments = data.segments
       if (data.status === 'FAILED' && (data.message || data.transcript)) next.failureMessage = data.message ?? data.transcript ?? null
       return next
@@ -140,7 +135,7 @@ function VideoCard({ id }: { id: string }) {
         <div className="flex gap-2 pt-3 border-t border-slate-100">
           {isFullyDone && (
             <Link href={`/transcribe/${id}`} className="flex-1 text-center bg-yt-hover hover:bg-nb-violet/8 hover:text-nb-violet text-yt-text text-xs py-2 rounded-xl transition-colors border border-slate-200 font-medium">
-              Review &amp; Annotate
+              Review
             </Link>
           )}
           <Link href={`/watch/${id}`} className="flex-1 text-center bg-gradient-to-r from-nb-violet to-nb-indigo text-white text-xs py-2 rounded-xl font-medium shadow-violet-btn hover:opacity-90 transition-opacity">
@@ -174,7 +169,7 @@ function ProcessingGrid() {
           <h1 className="text-2xl font-bold text-yt-text">
             Processing <span className="gradient-text">{ids.length} video{ids.length > 1 ? 's' : ''}</span>
           </h1>
-          <p className="text-yt-muted text-sm mt-1">Transcribing, tagging, and annotating automatically…</p>
+          <p className="text-yt-muted text-sm mt-1">Transcribing and tagging automatically…</p>
         </div>
         <div className="flex gap-3">
           <Link href="/upload" className="bg-white hover:bg-yt-hover text-yt-text px-5 py-2 rounded-xl text-sm font-medium border border-yt-border transition-colors">

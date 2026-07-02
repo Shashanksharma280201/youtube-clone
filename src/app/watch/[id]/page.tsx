@@ -44,7 +44,6 @@ export default async function WatchPage({ params }: { params: { id: string } }) 
         start: number
         end: number
         thumbnailPath: string | null
-        annotationFrames?: Array<{ time: number; masks: number[][][] }>
       }[])
     : []
 
@@ -58,6 +57,7 @@ export default async function WatchPage({ params }: { params: { id: string } }) 
       userInitial={video.user.name[0]?.toUpperCase() ?? '?'}
       views={video.views}
       createdAt={video.createdAt.toISOString()}
+      isOwner={session?.user?.id === video.user.id}
       segments={segments}
       initialLiked={userLiked}
       initialLikeCount={video._count.likes}

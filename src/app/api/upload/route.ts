@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { title, description, filename, contentType, sam3Enabled } = await request.json()
+  const { title, description, filename, contentType } = await request.json()
   if (!title || !filename) {
     return NextResponse.json({ error: 'Title and filename are required' }, { status: 400 })
   }
@@ -25,7 +25,6 @@ export async function POST(request: Request) {
         blobUrl: s3Url(key),
         userId: session.user.id,
         transcriptStatus: 'PENDING',
-        sam3Enabled: sam3Enabled === true,
       },
     })
 

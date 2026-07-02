@@ -3,6 +3,7 @@
 import { useRef, useState, useEffect, useMemo, useCallback } from 'react'
 import { tagColor } from '@/lib/tagColor'
 import LikeButton from '@/components/LikeButton'
+import DeleteVideoButton from '@/components/DeleteVideoButton'
 import WatchTranscript from '@/components/WatchTranscript'
 import { timeAgo, formatViews } from '@/lib/utils'
 
@@ -12,7 +13,6 @@ type VideoSegment = {
   start: number
   end: number
   thumbnailPath: string | null
-  annotationFrames?: Array<{ time: number; masks: number[][][] }>
 }
 
 interface WatchLayoutProps {
@@ -24,6 +24,7 @@ interface WatchLayoutProps {
   userInitial: string
   views: number
   createdAt: string
+  isOwner: boolean
   segments: VideoSegment[]
   initialLiked: boolean
   initialLikeCount: number
@@ -135,6 +136,7 @@ export default function WatchLayout({
   userInitial,
   views,
   createdAt,
+  isOwner,
   segments,
   initialLiked,
   initialLikeCount,
@@ -263,7 +265,10 @@ export default function WatchLayout({
                 <p className="text-yt-muted text-xs">{formatViews(views)} views · {timeAgo(createdAt)}</p>
               </div>
             </div>
-            <LikeButton videoId={videoId} initialLiked={initialLiked} initialCount={initialLikeCount} />
+            <div className="flex items-center gap-2">
+              <LikeButton videoId={videoId} initialLiked={initialLiked} initialCount={initialLikeCount} />
+              {isOwner && <DeleteVideoButton videoId={videoId} />}
+            </div>
           </div>
 
           {/* Description */}

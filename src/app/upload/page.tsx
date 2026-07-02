@@ -44,7 +44,6 @@ export default function UploadPage() {
   const [uploadingIdx, setUploadingIdx] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [isDragging, setIsDragging] = useState(false)
-  const [sam3Enabled, setSam3Enabled] = useState(false)
 
   if (status === 'loading') {
     return (
@@ -115,7 +114,7 @@ export default function UploadPage() {
       const res = await fetch('/api/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: title.trim(), description, filename: file.name, contentType: file.type, sam3Enabled }),
+        body: JSON.stringify({ title: title.trim(), description, filename: file.name, contentType: file.type }),
       })
       const data = await res.json()
       if (!res.ok) { setError(`"${title}" failed: ${data.error ?? 'Upload error'}`); setUploadingIdx(null); return }
@@ -221,29 +220,6 @@ export default function UploadPage() {
                     </div>
                   </div>
                 ))}
-
-                {/* SAM3 toggle */}
-                <button
-                  type="button"
-                  onClick={() => setSam3Enabled((v) => !v)}
-                  disabled={isUploading}
-                  className={`w-full flex items-center justify-between gap-3 px-3.5 py-3 rounded-xl border transition-all duration-200 ${
-                    sam3Enabled
-                      ? 'bg-cyan-50 border-cyan-200'
-                      : 'bg-yt-surface2 border-yt-border hover:border-slate-300'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-xl shrink-0">🔬</span>
-                    <div className="text-left min-w-0">
-                      <p className={`text-xs font-semibold ${sam3Enabled ? 'text-nb-cyan' : 'text-yt-text'}`}>SAM3 Annotation</p>
-                      <p className="text-yt-muted text-[11px]">AI segments objects per chapter</p>
-                    </div>
-                  </div>
-                  <span className={`relative inline-flex shrink-0 w-8 h-[18px] rounded-full transition-all duration-200 ${sam3Enabled ? 'bg-nb-cyan' : 'bg-slate-300'}`}>
-                    <span className={`absolute top-[3px] left-[3px] w-3 h-3 rounded-full bg-white shadow transition-transform duration-200 ${sam3Enabled ? 'translate-x-[14px]' : 'translate-x-0'}`} />
-                  </span>
-                </button>
               </div>
             </div>
           </div>

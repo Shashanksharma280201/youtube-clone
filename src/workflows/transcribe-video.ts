@@ -1,19 +1,19 @@
 // Durable transcription pipeline, optimised for Vercel's isolated steps.
 //
-// The big idea: each Vercel step runs on its own machine with its own disk, so we
-// must NOT re-download the full video in every step. Instead we touch the video
-// exactly twice:
-//   • PREPARE  — download once, rip the audio into small ~2MB chunks, store them in
-//                S3, then throw the video away.
-//   • FRAMES   — download once, grab only the silent-gap frames + chapter thumbnails.
-// Everything in between (transcription, tagging) works on the tiny audio chunks.
-// Video downloads per video: ~17 → 2.
+// The big idea: NEVER download the full video. ffmpeg seeks each slice it needs
+// (audio chunks, frames) straight from a presigned S3 URL via HTTP range requests,
+// so on-disk footprint per step is only the small output (a ~2MB audio slice or a
+// JPEG), never the multi-GB source. This is what keeps 1–4hr videos under Vercel's
+// ~512MB /tmp (the previous full-download approach overflowed it → ENOSPC).
+//
+// Each step presigns its OWN short-lived URL at execution time, so nothing expires
+// mid-workflow even when Groq rate-limits pace a long video across hours.
 //
 // All domain logic lives in the orchestration-agnostic src/lib/pipeline/* modules,
 // so moving off Vercel later means swapping this one file, not the pipeline.
 import { FatalError, RetryableError } from "workflow";
 import { prisma } from "@/lib/prisma";
-import { s3Key, ensureLocalVideo, uploadToS3, downloadFromS3 } from "@/lib/s3";
+import { s3Key, getPresignedDownloadUrl } from "@/lib/s3";
 import { probeDuration, extractAudioSlice, detectSilentWindows } from "@/lib/pipeline/media";
 import { transcribeAudioFile, isHallucination, RateLimitedError } from "@/lib/pipeline/transcribe";
 import { findUnspokenGaps, chunkLongGaps } from "@/lib/pipeline/gaps";
@@ -27,12 +27,12 @@ import {
   FULL_SILENT_CHUNK_SECS,
   MAX_SILENT_CHUNKS,
 } from "@/lib/pipeline/types";
-import { unlink, mkdir } from "fs/promises";
+import { unlink } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import type { RawSegment, TaggedSegment, VideoSegment, SilentWindow } from "@/lib/pipeline/types";
 
-type AudioChunk = { key: string; offset: number; dur: number };
+type AudioSegment = { offset: number; dur: number };
 type ChunkResult = { spoken: RawSegment[]; silentWindows: { start: number; end: number }[] };
 
 const TRANSCRIBE_CONCURRENCY = 3; // parallel transcription steps — modest, kind to dev + Groq
@@ -55,52 +55,42 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, i: number
 
 // ─── steps (full Node.js access) ──────────────────────────────────────────────
 
-// Download the video ONCE, slice its audio into small chunks, push them to S3, and
-// drop the video. Returns the S3 video key (for the frames step) + per-chunk audio keys.
+// Probe the video's duration (ranged read of the container header — no download)
+// and slice the timeline into fixed-length segments for the transcribe fan-out.
 async function prepareStep(
   videoId: string,
-): Promise<{ key: string; duration: number; chunks: AudioChunk[] }> {
+): Promise<{ key: string; duration: number; segments: AudioSegment[] }> {
   "use step";
   const video = await prisma.video.findUnique({ where: { id: videoId } });
   if (!video) throw new FatalError("Video not found");
 
   const key = s3Key(video.blobUrl);
-  const local = await ensureLocalVideo(videoId, key);
-  const duration = await probeDuration(local);
+  const url = await getPresignedDownloadUrl(key);
+  const duration = await probeDuration(url);
   const total = Math.max(duration, 1);
 
-  const dir = join(tmpdir(), `aprep-${videoId}`);
-  await mkdir(dir, { recursive: true });
-
-  const chunks: AudioChunk[] = [];
-  for (let t = 0, i = 0; t < total; t += SEGMENT_SECS, i++) {
-    const dur = Math.min(SEGMENT_SECS, total - t) || SEGMENT_SECS;
-    const localChunk = join(dir, `chunk-${i}.mp3`);
-    await extractAudioSlice(local, t, dur, localChunk);
-    const chunkKey = `audio/${videoId}/chunk-${i}.mp3`;
-    await uploadToS3(localChunk, chunkKey, "audio/mpeg");
-    await unlink(localChunk).catch(() => {});
-    chunks.push({ key: chunkKey, offset: t, dur });
+  const segments: AudioSegment[] = [];
+  for (let t = 0; t < total; t += SEGMENT_SECS) {
+    segments.push({ offset: t, dur: Math.min(SEGMENT_SECS, total - t) || SEGMENT_SECS });
   }
-
-  // Drop the big video — transcription only needs the small audio chunks now.
-  await unlink(local).catch(() => {});
-  return { key, duration, chunks };
+  return { key, duration, segments };
 }
 
-// Transcribe ONE small audio chunk (downloaded from S3, ~2MB). Also runs
-// silencedetect on it. Timestamps are offset back onto the real timeline.
+// Transcribe ONE segment: ffmpeg rips just this ~10-min audio slice straight from
+// the presigned S3 URL (disk ≈ 2MB), then Groq transcribes it and silencedetect
+// runs on it. Timestamps are offset back onto the real timeline.
 // A Groq 429 becomes a RetryableError so the workflow paces durably around the quota.
 async function transcribeChunkStep(
   videoId: string,
-  chunkKey: string,
+  key: string,
   offset: number,
   dur: number,
 ): Promise<ChunkResult> {
   "use step";
+  const url = await getPresignedDownloadUrl(key);
   const local = join(tmpdir(), `tchunk-${videoId}-${Math.round(offset)}.mp3`);
   try {
-    await downloadFromS3(chunkKey, local);
+    await extractAudioSlice(url, offset, dur, local);
 
     let spoken: RawSegment[];
     try {
@@ -162,53 +152,51 @@ async function framesStep(
   duration: number,
 ): Promise<{ transcript: string; transcriptSegments: TaggedSegment[]; topicSegments: VideoSegment[] }> {
   "use step";
-  const local = await ensureLocalVideo(videoId, key);
-  try {
-    // Decide which stretches to describe with Vision.
-    let chunks: { start: number; end: number }[];
-    if (spokenSegments.length === 0 && duration > 0) {
-      chunks = [];
-      for (let t = 0; t < duration; t += FULL_SILENT_CHUNK_SECS)
-        chunks.push({ start: t, end: Math.min(t + FULL_SILENT_CHUNK_SECS, duration) });
-      chunks = chunks.slice(0, MAX_SILENT_CHUNKS);
-    } else {
-      const gaps = findUnspokenGaps(windows as SilentWindow[], spokenSegments, duration);
-      chunks = chunkLongGaps(gaps, SILENCE_CHUNK_SECS);
-    }
+  // ffmpeg seeks each frame straight from S3 — no full-video download.
+  const url = await getPresignedDownloadUrl(key);
 
-    let silentSegments: TaggedSegment[] = [];
-    try {
-      silentSegments = await buildSilentSegments(chunks, local, videoId);
-    } catch (err) {
-      console.error("[transcribe-workflow] silent vision failed:", err);
-    }
-
-    // Full-resolution transcript (spoken + silent descriptions) for the transcript panel.
-    const transcriptSegments = [
-      ...spokenSegments,
-      ...silentSegments.map((s) => ({ ...s, text: s.subTag })),
-    ].sort((a, b) => a.start - b.start);
-
-    // Consolidated chapters (far fewer) → one thumbnail each.
-    const chapters = consolidateChapters(
-      [...spokenSegments, ...silentSegments].sort((a, b) => a.start - b.start),
-      MAX_CHAPTERS,
-    );
-    let topicSegments: VideoSegment[] = [];
-    try {
-      topicSegments = await generateVideoSegments(chapters, local, videoId);
-    } catch (err) {
-      console.error("[transcribe-workflow] thumbnails failed:", err);
-      topicSegments = chapters.map((c) => ({
-        mainTag: c.mainTag, subTag: c.subTag, start: c.start, end: c.end, thumbnailPath: null,
-      }));
-    }
-
-    const transcript = spokenSegments.map((s) => s.text).join(" ");
-    return { transcript, transcriptSegments, topicSegments };
-  } finally {
-    unlink(local).catch(() => {});
+  // Decide which stretches to describe with Vision.
+  let chunks: { start: number; end: number }[];
+  if (spokenSegments.length === 0 && duration > 0) {
+    chunks = [];
+    for (let t = 0; t < duration; t += FULL_SILENT_CHUNK_SECS)
+      chunks.push({ start: t, end: Math.min(t + FULL_SILENT_CHUNK_SECS, duration) });
+    chunks = chunks.slice(0, MAX_SILENT_CHUNKS);
+  } else {
+    const gaps = findUnspokenGaps(windows as SilentWindow[], spokenSegments, duration);
+    chunks = chunkLongGaps(gaps, SILENCE_CHUNK_SECS);
   }
+
+  let silentSegments: TaggedSegment[] = [];
+  try {
+    silentSegments = await buildSilentSegments(chunks, url, videoId);
+  } catch (err) {
+    console.error("[transcribe-workflow] silent vision failed:", err);
+  }
+
+  // Full-resolution transcript (spoken + silent descriptions) for the transcript panel.
+  const transcriptSegments = [
+    ...spokenSegments,
+    ...silentSegments.map((s) => ({ ...s, text: s.subTag })),
+  ].sort((a, b) => a.start - b.start);
+
+  // Consolidated chapters (far fewer) → one thumbnail each.
+  const chapters = consolidateChapters(
+    [...spokenSegments, ...silentSegments].sort((a, b) => a.start - b.start),
+    MAX_CHAPTERS,
+  );
+  let topicSegments: VideoSegment[] = [];
+  try {
+    topicSegments = await generateVideoSegments(chapters, url, videoId);
+  } catch (err) {
+    console.error("[transcribe-workflow] thumbnails failed:", err);
+    topicSegments = chapters.map((c) => ({
+      mainTag: c.mainTag, subTag: c.subTag, start: c.start, end: c.end, thumbnailPath: null,
+    }));
+  }
+
+  const transcript = spokenSegments.map((s) => s.text).join(" ");
+  return { transcript, transcriptSegments, topicSegments };
 }
 
 async function saveStep(
@@ -244,11 +232,12 @@ async function failStep(videoId: string, message: string): Promise<void> {
 export async function transcribeVideoWorkflow(videoId: string): Promise<{ status: string }> {
   "use workflow";
   try {
-    const { key, duration, chunks } = await prepareStep(videoId);
+    const { key, duration, segments } = await prepareStep(videoId);
 
-    // Transcribe the small audio chunks with bounded concurrency.
-    const perChunk = await mapLimit(chunks, TRANSCRIBE_CONCURRENCY, (c) =>
-      transcribeChunkStep(videoId, c.key, c.offset, c.dur),
+    // Transcribe the segments with bounded concurrency — each step rips its own
+    // audio slice from S3, so no full download and no per-chunk S3 round-trip.
+    const perChunk = await mapLimit(segments, TRANSCRIBE_CONCURRENCY, (s) =>
+      transcribeChunkStep(videoId, key, s.offset, s.dur),
     );
     const allSpokenRaw = perChunk.flatMap((p) => p.spoken);
     const allWindows = perChunk.flatMap((p) => p.silentWindows);

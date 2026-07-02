@@ -9,8 +9,6 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       transcript: true,
       transcriptSegments: true,
       topicSegments: true,
-      annotationStatus: true,
-      sam3Enabled: true,
     },
   })
 
@@ -21,7 +19,5 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     transcript: video.transcript,
     segments: video.transcriptSegments,
     topicSegments: video.topicSegments,
-    annotationStatus: video.annotationStatus,
-    sam3Enabled: video.sam3Enabled,
   })
 }

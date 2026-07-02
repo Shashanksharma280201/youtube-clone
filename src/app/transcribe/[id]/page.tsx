@@ -154,7 +154,7 @@ export default function TranscribePage({ params }: { params: { id: string } }) {
             </svg>
           </Link>
           <div className="min-w-0">
-            <h1 className="text-yt-text font-semibold text-sm truncate">Review &amp; Annotate</h1>
+            <h1 className="text-yt-text font-semibold text-sm truncate">Review</h1>
             <p className="text-yt-muted text-xs hidden sm:block">
               {activeMainTag
                 ? `Filtering by "${cap(activeMainTag)}"`

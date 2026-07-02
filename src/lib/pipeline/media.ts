@@ -6,12 +6,33 @@
 import { spawn } from "child_process";
 import { SILENCE_NOISE_DB, SILENCE_MIN_SECS, type SilentWindow } from "./types";
 
-// Resolve the ffmpeg-static binary with Node's REAL runtime require (not the
-// bundler's), so it survives webpack/esbuild step bundling. Cached after first use.
+// Resolve the ffmpeg binary. Order:
+//   1. FFMPEG_PATH env override (escape hatch for any environment).
+//   2. Local/non-Vercel: prefer a system ffmpeg if present — the static
+//      ffmpeg-static build SEGFAULTS on http/https reads inside restricted
+//      sandboxes (verified), while a dynamically-linked system ffmpeg reads
+//      S3 URLs fine. This lets us seek remote slices in local dev.
+//   3. Vercel (or no system ffmpeg): fall back to ffmpeg-static.
+// Resolved with Node's REAL runtime require (not the bundler's) so it survives
+// webpack/esbuild step bundling. Cached after first use.
 let _ffmpeg: string | null = null;
 function ffmpeg(): string {
   if (_ffmpeg) return _ffmpeg;
   const nodeRequire = eval("require") as NodeRequire;
+
+  if (process.env.FFMPEG_PATH) {
+    _ffmpeg = process.env.FFMPEG_PATH;
+    return _ffmpeg;
+  }
+  if (!process.env.VERCEL) {
+    try {
+      const fs = nodeRequire("fs");
+      for (const p of ["/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/homebrew/bin/ffmpeg"]) {
+        if (fs.existsSync(p)) { _ffmpeg = p; return p; }
+      }
+    } catch { /* fall through to ffmpeg-static */ }
+  }
+
   const path: string = nodeRequire("ffmpeg-static");
   try {
     nodeRequire("fs").chmodSync(path, 0o755); // Vercel can strip +x
@@ -20,6 +41,17 @@ function ffmpeg(): string {
   }
   _ffmpeg = path;
   return path;
+}
+
+// True for http(s) sources. Remote reads get reconnect flags so a dropped S3
+// connection retries mid-stream instead of failing the whole ffmpeg call.
+function isUrl(source: string): boolean {
+  return /^https?:\/\//i.test(source);
+}
+function reconnectFlags(source: string): string[] {
+  return isUrl(source)
+    ? ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]
+    : [];
 }
 
 // Run ffmpeg with a hard timeout. Resolves with the exit code + captured stderr;
@@ -48,7 +80,7 @@ export async function probeDuration(source: string): Promise<number> {
     // without decoding. Do NOT add `-f null -` here: that decodes the entire video,
     // which takes minutes on a long video and times out in a serverless function,
     // returning 0 and silently breaking the whole pipeline.
-    const { stderr } = await runFfmpeg(["-i", source], 60_000);
+    const { stderr } = await runFfmpeg([...reconnectFlags(source), "-i", source], 60_000);
     const m = stderr.match(/Duration:\s+(\d+):(\d+):([\d.]+)/);
     if (!m) return 0;
     return parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseFloat(m[3]);
@@ -65,7 +97,7 @@ export async function extractAudioSlice(
   outputPath: string,
 ): Promise<void> {
   const { code } = await runFfmpeg(
-    ["-y", "-ss", String(start), "-t", String(dur), "-i", source,
+    ["-y", ...reconnectFlags(source), "-ss", String(start), "-t", String(dur), "-i", source,
       "-vn", "-ar", "16000", "-ac", "1", "-c:a", "libmp3lame", "-b:a", "32k", outputPath],
     240_000,
   );
@@ -74,7 +106,7 @@ export async function extractAudioSlice(
 
 export async function extractFrameAt(source: string, time: number, outputPath: string): Promise<void> {
   const { code } = await runFfmpeg(
-    ["-y", "-ss", String(time), "-i", source, "-vframes", "1", "-q:v", "2", outputPath],
+    ["-y", ...reconnectFlags(source), "-ss", String(time), "-i", source, "-vframes", "1", "-q:v", "2", outputPath],
     60_000,
   );
   if (code !== 0) throw new Error(`ffmpeg frame exit ${code}`);

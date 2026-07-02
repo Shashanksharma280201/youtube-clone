@@ -1,4 +1,11 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  DeleteObjectsCommand,
+  ListObjectsV2Command,
+} from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { createWriteStream, existsSync } from 'fs'
 import { rename, unlink } from 'fs/promises'
@@ -74,4 +81,25 @@ export async function uploadToS3(localPath: string, key: string, contentType: st
   const body = await readFile(localPath)
   await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: body, ContentType: contentType }))
   return s3Url(key)
+}
+
+// Delete a single object. No-op if it doesn't exist (S3 delete is idempotent).
+export async function deleteFromS3(key: string) {
+  await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }))
+}
+
+// Delete every object under a prefix (e.g. `audio/<videoId>/`, `thumbnails/<videoId>/`),
+// paging through results and batch-deleting up to 1000 keys at a time.
+export async function deleteS3Prefix(prefix: string) {
+  let ContinuationToken: string | undefined
+  do {
+    const list = await s3.send(
+      new ListObjectsV2Command({ Bucket: BUCKET, Prefix: prefix, ContinuationToken }),
+    )
+    const objects = (list.Contents ?? []).map((o) => ({ Key: o.Key! }))
+    if (objects.length > 0) {
+      await s3.send(new DeleteObjectsCommand({ Bucket: BUCKET, Delete: { Objects: objects } }))
+    }
+    ContinuationToken = list.IsTruncated ? list.NextContinuationToken : undefined
+  } while (ContinuationToken)
 }

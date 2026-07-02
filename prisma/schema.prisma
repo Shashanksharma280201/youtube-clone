@@ -28,14 +28,6 @@ enum TranscriptStatus {
   FAILED
 }
 
-enum AnnotationStatus {
-  NONE
-  PENDING
-  PROCESSING
-  DONE
-  FAILED
-}
-
 model Video {
   id                 String           @id @default(cuid())
   title              String
@@ -54,8 +46,6 @@ model Video {
   // Denormalized first-chapter thumbnail for the home feed, so the grid query
   // never has to pull the heavy transcript/topicSegments JSON. Set in saveStep.
   thumbnailUrl       String?
-  annotationStatus   AnnotationStatus @default(NONE)
-  sam3Enabled        Boolean          @default(false)
 }
 
 model Like {
