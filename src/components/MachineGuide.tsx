@@ -30,6 +30,21 @@ function Jump({ start, onSeek }: { start: number | null; onSeek: (t: number) => 
   )
 }
 
+// An ordered, numbered checklist of steps. Renders nothing when empty.
+function Steps({ steps }: { steps?: string[] }) {
+  if (!steps || steps.length === 0) return null
+  return (
+    <ol className="mt-3 space-y-2">
+      {steps.map((s, i) => (
+        <li key={i} className="flex gap-2.5">
+          <span className="shrink-0 w-5 h-5 rounded-full bg-nb-violet/10 text-nb-violet text-xs font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
+          <span className="text-slate-700 text-sm leading-relaxed break-words">{s}</span>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 function SectionHeader({ icon, title, count }: { icon: React.ReactNode; title: string; count?: number }) {
   return (
     <div className="flex items-center gap-2.5 mb-3">
@@ -66,6 +81,7 @@ function GuideList({ items, onSeek }: { items: DomainData['machineIntro']; onSee
             <Jump start={it.start} onSeek={onSeek} />
           </div>
           {it.detail && <p className="text-slate-700 text-sm mt-1.5 leading-relaxed break-words">{it.detail}</p>}
+          <Steps steps={it.steps} />
         </li>
       ))}
     </ul>
@@ -92,7 +108,8 @@ function FaqAccordion({ items, onSeek }: { items: DomainData['troubleshooting'];
             {isOpen && (
               <div className="px-3.5 pb-3.5 -mt-0.5">
                 <p className="text-slate-700 text-sm leading-relaxed break-words">{it.answer}</p>
-                {it.start != null && <div className="mt-2.5"><Jump start={it.start} onSeek={onSeek} /></div>}
+                <Steps steps={it.steps} />
+                {it.start != null && <div className="mt-3"><Jump start={it.start} onSeek={onSeek} /></div>}
               </div>
             )}
           </div>
@@ -178,6 +195,7 @@ export default function MachineGuide({ data, onSeek }: { data: DomainData; onSee
                       <span className="text-emerald-600 font-semibold">Fix: </span>{ec.resolution}
                     </p>
                   )}
+                  <Steps steps={ec.steps} />
                 </div>
               ))}
             </div>
@@ -204,6 +222,7 @@ export default function MachineGuide({ data, onSeek }: { data: DomainData; onSee
                     <Jump start={it.start} onSeek={onSeek} />
                   </div>
                   {it.detail && <p className="text-amber-800 text-sm mt-1.5 leading-relaxed break-words">{it.detail}</p>}
+                  <Steps steps={it.steps} />
                 </li>
               ))}
             </ul>

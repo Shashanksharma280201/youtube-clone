@@ -2,23 +2,27 @@
 // (no OpenAI SDK), so this is safe to import from client components.
 
 // A guide entry tied to a moment in the video. `start` is seconds (null if the
-// item isn't tied to a specific timestamp).
+// item isn't tied to a specific timestamp). `detail` is a descriptive paragraph;
+// `steps` is an ordered, actionable checklist (empty when the item isn't a procedure).
 export type GuideItem = {
   title: string;
   detail: string;
+  steps: string[];
   start: number | null;
 };
 
 export type ErrorCodeItem = {
   code: string;
   meaning: string;
-  resolution: string;
+  resolution: string; // descriptive explanation of the fix
+  steps: string[]; // ordered steps to resolve
   start: number | null;
 };
 
 export type FaqItem = {
   question: string;
-  answer: string;
+  answer: string; // descriptive explanation
+  steps: string[]; // ordered steps to fix / do it
   start: number | null;
 };
 

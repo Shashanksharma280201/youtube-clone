@@ -46,8 +46,8 @@ function coerce(raw: unknown, duration: number): DomainData {
 
   const items = (v: unknown): GuideItem[] =>
     arr(v)
-      .map((it) => ({ title: str(it.title), detail: str(it.detail), start: clampStart(it.start) }))
-      .filter((it) => it.title || it.detail);
+      .map((it) => ({ title: str(it.title), detail: str(it.detail), steps: strArr(it.steps), start: clampStart(it.start) }))
+      .filter((it) => it.title || it.detail || it.steps.length);
 
   return {
     machine: str(o.machine),
@@ -59,11 +59,12 @@ function coerce(raw: unknown, duration: number): DomainData {
         code: str(it.code),
         meaning: str(it.meaning),
         resolution: str(it.resolution),
+        steps: strArr(it.steps),
         start: clampStart(it.start),
       }))
       .filter((it) => it.code || it.meaning),
     troubleshooting: arr(o.troubleshooting)
-      .map((it) => ({ question: str(it.question), answer: str(it.answer), start: clampStart(it.start) }))
+      .map((it) => ({ question: str(it.question), answer: str(it.answer), steps: strArr(it.steps), start: clampStart(it.start) }))
       .filter((it) => it.question),
     safety: items(o.safety),
     tools: strArr(o.tools),
@@ -96,20 +97,23 @@ export async function extractDomainData(
     .map((c, i) => `${i + 1}. [${fmtClock(c.start)} | ${Math.round(c.start)}s] ${c.mainTag} — ${c.subTag}`)
     .join("\n");
 
-  const system = `You are an expert at turning a machine/equipment maintenance video into a structured guide for technicians.
-Read the timestamped transcript and chapter list, then extract ONLY information actually present in the video.
-For every item, set "start" to the number of SECONDS where it is discussed (pick the closest transcript/chapter timestamp). Use null only if it truly maps to no moment.
-Do NOT invent error codes, specs, or steps that aren't in the transcript. Leave a section as an empty array if the video has nothing for it.
+  const system = `You are an expert maintenance technical writer. Turn a machine/equipment video into a detailed, practical field guide another technician can follow WITHOUT watching the video.
+Use ONLY information actually present in the transcript/chapters — never invent codes, specs, or steps. Leave a section as an empty array if the video has nothing for it.
+
+WRITE FOR ACTION — this is the most important rule:
+- "detail" / "answer" / "resolution" must be a DESCRIPTIVE paragraph (2-4 full sentences): explain what it is, why it matters, and the context — not a single line.
+- "steps" must be an ordered checklist of clear, specific, actionable instructions (aim for 3-8 steps) that walk the technician through doing it. Each step is one concrete action, written as an imperative ("Remove the...", "Torque the... to..."). Include values, tools, and cautions the video mentions. Use [] only when the item genuinely has no procedure (e.g. a pure fact).
+- For every item, set "start" to the SECONDS where it is discussed (closest transcript/chapter timestamp), or null if none.
 
 Return ONLY this JSON object:
 {
   "machine": "short name of the machine/equipment, or ''",
-  "summary": "1-2 sentence overview of what this video covers",
-  "machineIntro": [{"title":"...", "detail":"what is introduced/explained", "start":<seconds|null>}],
-  "preventiveMaintenance": [{"title":"task name", "detail":"how/when to do it", "start":<seconds|null>}],
-  "errorCodes": [{"code":"E-123", "meaning":"what it indicates", "resolution":"how to resolve", "start":<seconds|null>}],
-  "troubleshooting": [{"question":"symptom/problem as a question", "answer":"the fix explained", "start":<seconds|null>}],
-  "safety": [{"title":"warning", "detail":"why/precaution", "start":<seconds|null>}],
+  "summary": "2-3 sentence overview of what this video covers and its purpose",
+  "machineIntro": [{"title":"component/system name", "detail":"descriptive explanation of what it is and its role", "steps":[], "start":<seconds|null>}],
+  "preventiveMaintenance": [{"title":"task name", "detail":"what this maintenance is, why and when to do it", "steps":["ordered action 1","action 2","..."], "start":<seconds|null>}],
+  "errorCodes": [{"code":"E-123", "meaning":"descriptive explanation of what it indicates and likely cause", "resolution":"overview of the fix", "steps":["ordered resolution step 1","step 2","..."], "start":<seconds|null>}],
+  "troubleshooting": [{"question":"symptom/problem as a question", "answer":"descriptive explanation of the cause and fix", "steps":["ordered fix step 1","step 2","..."], "start":<seconds|null>}],
+  "safety": [{"title":"hazard/warning", "detail":"descriptive explanation of the risk and why", "steps":["precaution 1","precaution 2","..."], "start":<seconds|null>}],
   "tools": ["tool names mentioned"],
   "parts": ["replacement parts/components mentioned"],
   "specs": [{"label":"e.g. torque / pressure / capacity", "value":"e.g. 250 Nm", "start":<seconds|null>}]
@@ -122,7 +126,7 @@ Return ONLY this JSON object:
       model: "gpt-4o",
       temperature: 0,
       response_format: { type: "json_object" },
-      max_tokens: 4000,
+      max_tokens: 8000, // richer descriptions + step lists need more room
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
