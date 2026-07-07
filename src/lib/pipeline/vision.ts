@@ -12,6 +12,7 @@ import {
   withConcurrency,
   type TaggedSegment,
 } from "./types";
+import type { Step } from "./domain-types";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -161,4 +162,60 @@ export async function buildSilentSegments(
     mainTag: "action",
     subTag: framePaths[i] ? (allDescriptions[descIdx++] ?? "performing task") : "performing task",
   }));
+}
+
+// ─── step-location vision (the "where is it on screen" enrichment) ─────────────
+
+const MAX_LOCATED_STEPS = 30; // cap vision calls per video
+
+// Look at the frame for one fix step and say WHERE the part is on screen.
+async function locateComponent(framePath: string, stepText: string): Promise<string> {
+  const bytes = await readFile(framePath);
+  try {
+    const res = await openai.chat.completions.create({
+      model: "gpt-4o",
+      max_tokens: 70,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `This is one frame from a maintenance video. The technician is doing this step: "${stepText}". In ONE short phrase, say WHERE the part/component involved is and what it looks like, so someone can find it on the machine (e.g. "the green 4-pin connector on the lower-left of the control box" or "the oil sight glass on the front of the tank"). If the frame does not clearly show it, reply with an empty string. Reply with ONLY the phrase, no quotes.`,
+            },
+            { type: "image_url" as const, image_url: { url: `data:image/jpeg;base64,${bytes.toString("base64")}`, detail: "low" as const } },
+          ],
+        },
+      ],
+    });
+    const t = res.choices[0]?.message?.content?.trim() ?? "";
+    // guard against the model echoing the instruction or returning junk
+    return t.length > 4 && t.length < 200 ? t.replace(/^["']|["']$/g, "") : "";
+  } catch (err) {
+    console.error("[locate] failed:", err);
+    return "";
+  }
+}
+
+// For each step that has a timestamp, grab its frame and fill in `step.visual`
+// with where the component is on screen. Mutates the step objects in place.
+export async function enrichStepsWithVision(source: string, steps: Step[], videoId: string): Promise<void> {
+  const targets = steps.filter((s) => s.start != null && s.text).slice(0, MAX_LOCATED_STEPS);
+  if (targets.length === 0) return;
+
+  const dir = join(tmpdir(), `loc-${videoId}`);
+  await mkdir(dir, { recursive: true });
+
+  await withConcurrency(
+    targets.map((step, i) => async () => {
+      const fp = join(dir, `loc-${i}.jpg`);
+      try {
+        await extractFrameAt(source, step.start as number, fp);
+        if (existsSync(fp)) step.visual = await locateComponent(fp, step.text);
+      } catch {
+        /* leave visual empty */
+      }
+    }),
+    VISION_CONCURRENCY,
+  );
 }

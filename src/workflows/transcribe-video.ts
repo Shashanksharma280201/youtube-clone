@@ -17,7 +17,7 @@ import { s3Key, getPresignedDownloadUrl } from "@/lib/s3";
 import { probeDuration, extractAudioSlice, detectSilentWindows } from "@/lib/pipeline/media";
 import { transcribeAudioFile, isHallucination, RateLimitedError } from "@/lib/pipeline/transcribe";
 import { findUnspokenGaps, chunkLongGaps } from "@/lib/pipeline/gaps";
-import { buildSilentSegments } from "@/lib/pipeline/vision";
+import { buildSilentSegments, enrichStepsWithVision } from "@/lib/pipeline/vision";
 import { analyzeVideo, tagSegments } from "@/lib/pipeline/tag";
 import { generateVideoSegments } from "@/lib/pipeline/thumbnails";
 import { consolidateChapters } from "@/lib/pipeline/consolidate";
@@ -216,6 +216,24 @@ async function domainStep(
   }
 }
 
+// Add "where is it on screen" notes to each fix step: grab the video frame at
+// the step's timestamp and describe the component's location with Vision.
+async function enrichGuideStep(videoId: string, key: string, domain: DomainData): Promise<DomainData> {
+  "use step";
+  try {
+    const url = await getPresignedDownloadUrl(key);
+    const steps = [
+      ...domain.troubleshooting.flatMap((d) => d.fix),
+      ...domain.errorCodes.flatMap((d) => d.fix),
+      ...domain.preventiveMaintenance.flatMap((p) => p.steps),
+    ];
+    await enrichStepsWithVision(url, steps, videoId); // mutates step.visual in place
+  } catch (err) {
+    console.error("[transcribe-workflow] guide vision enrich failed:", err);
+  }
+  return domain;
+}
+
 async function saveStep(
   videoId: string,
   transcript: string,
@@ -267,10 +285,12 @@ export async function transcribeVideoWorkflow(videoId: string): Promise<{ status
       videoId, key, allWindows, spokenSegments, duration,
     );
 
-    // Machine-maintenance guide extraction (runs off the transcript + chapters).
+    // Machine-maintenance guide extraction (runs off the transcript + chapters),
+    // then enrich each fix step with an on-screen "where is it" note via Vision.
     const domainData = await domainStep(transcriptSegments, topicSegments, duration);
+    const enriched = await enrichGuideStep(videoId, key, domainData);
 
-    await saveStep(videoId, transcript, transcriptSegments, topicSegments, domainData);
+    await saveStep(videoId, transcript, transcriptSegments, topicSegments, enriched);
     return { status: "DONE" };
   } catch (err) {
     const message = (err as Error)?.message ?? "An error occurred during transcription. Please try again.";
