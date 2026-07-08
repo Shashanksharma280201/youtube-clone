@@ -81,19 +81,19 @@ export default function TranscribePage({ params }: { params: { id: string } }) {
   }
 
   useEffect(() => {
-    fetch(`/api/videos/${id}`).then((r) => r.json()).then((d) => { if (d.blobUrl) setVideoUrl(d.blobUrl) })
-    fetch(`/api/videos/${id}/transcript`).then((r) => r.json()).then(applyTranscriptData)
+    fetch(`/api/v1/videos/${id}`).then((r) => r.json()).then((d) => { if (d.blobUrl) setVideoUrl(d.blobUrl) })
+    fetch(`/api/v1/videos/${id}/transcript`).then((r) => r.json()).then(applyTranscriptData)
   }, [id])
 
   useEffect(() => {
     if (transcribeStarted) return
     setTranscribeStarted(true)
-    fetch(`/api/videos/${id}/transcribe`, { method: 'POST' })
+    fetch(`/api/v1/videos/${id}/transcribe`, { method: 'POST' })
       .then((r) => r.json())
       .then((data) => {
         applyTranscriptData(data)
         if (data.status === 'DONE' || data.status === 'FAILED') {
-          fetch(`/api/videos/${id}/transcript`).then((r) => r.json()).then(applyTranscriptData).catch(() => {})
+          fetch(`/api/v1/videos/${id}/transcript`).then((r) => r.json()).then(applyTranscriptData).catch(() => {})
         }
       })
       .catch(() => {})
@@ -107,7 +107,7 @@ export default function TranscribePage({ params }: { params: { id: string } }) {
     }
     pollRef.current = setInterval(async () => {
       try {
-        const data = await fetch(`/api/videos/${id}/transcript`).then((r) => r.json())
+        const data = await fetch(`/api/v1/videos/${id}/transcript`).then((r) => r.json())
         applyTranscriptData(data)
       } catch { /* ignore */ }
     }, 2000)

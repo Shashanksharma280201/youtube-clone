@@ -1,0 +1,38 @@
+# Local full-stack run of the app (Option B): the Next app + a dedicated Postgres
+# that backs the Workflow engine (durable transcription). The app database (Neon)
+# and video storage (S3) stay external — provide their creds in .env.docker.
+#
+#   cp .env.docker.example .env.docker   # then fill in the values
+#   docker compose up --build            # http://localhost:3000
+
+services:
+  workflow-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: world
+      POSTGRES_PASSWORD: world
+      POSTGRES_DB: world
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U world -d world"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - workflow-db-data:/var/lib/postgresql/data
+
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.docker
+    environment:
+      # The Workflow engine runs self-hosted against the local Postgres above.
+      WORKFLOW_TARGET_WORLD: "@workflow/world-postgres"
+      WORKFLOW_POSTGRES_URL: "postgres://world:world@workflow-db:5432/world"
+    depends_on:
+      workflow-db:
+        condition: service_healthy
+
+volumes:
+  workflow-db-data:

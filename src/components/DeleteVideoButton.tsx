@@ -15,7 +15,7 @@ export default function DeleteVideoButton({ videoId }: { videoId: string }) {
     setDeleting(true)
     setError(false)
     try {
-      const res = await fetch(`/api/videos/${videoId}`, { method: 'DELETE' })
+      const res = await fetch(`/api/v1/videos/${videoId}`, { method: 'DELETE' })
       if (!res.ok) throw new Error(String(res.status))
       router.push('/')
       router.refresh()

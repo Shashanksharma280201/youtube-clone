@@ -14,7 +14,7 @@ export default function VideoGrid({ initialItems, initialCursor }: { initialItem
   const loadMore = useCallback(async () => {
     if (loading || !cursor) return
     setLoading(true)
-    const res = await fetch(`/api/videos?cursor=${cursor}&limit=12`)
+    const res = await fetch(`/api/v1/videos?cursor=${cursor}&limit=12`)
     const data = await res.json()
     setItems((prev) => [...prev, ...data.items])
     setCursor(data.nextCursor)

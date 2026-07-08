@@ -41,22 +41,22 @@ function VideoCard({ id }: { id: string }) {
   }
 
   useEffect(() => {
-    fetch(`/api/videos/${id}`).then((r) => r.json()).then((d) => setState((prev) => ({ ...prev, title: d.title ?? id })))
+    fetch(`/api/v1/videos/${id}`).then((r) => r.json()).then((d) => setState((prev) => ({ ...prev, title: d.title ?? id })))
   }, [id])
 
   useEffect(() => {
-    fetch(`/api/videos/${id}/transcript`).then((r) => r.json()).then(applyData)
+    fetch(`/api/v1/videos/${id}/transcript`).then((r) => r.json()).then(applyData)
   }, [id])
 
   useEffect(() => {
     if (transcribeStartedRef.current) return
     transcribeStartedRef.current = true
-    fetch(`/api/videos/${id}/transcribe`, { method: 'POST' })
+    fetch(`/api/v1/videos/${id}/transcribe`, { method: 'POST' })
       .then((r) => r.json())
       .then((data) => {
         applyData(data)
         if (data.status === 'DONE' || data.status === 'FAILED') {
-          fetch(`/api/videos/${id}/transcript`).then((r) => r.json()).then(applyData).catch(() => {})
+          fetch(`/api/v1/videos/${id}/transcript`).then((r) => r.json()).then(applyData).catch(() => {})
         }
       })
       .catch(() => {})
@@ -67,7 +67,7 @@ function VideoCard({ id }: { id: string }) {
     if (isFullyDone) { if (pollRef.current) clearInterval(pollRef.current); return }
 
     pollRef.current = setInterval(async () => {
-      try { const data = await fetch(`/api/videos/${id}/transcript`).then((r) => r.json()); applyData(data) } catch { /* ignore */ }
+      try { const data = await fetch(`/api/v1/videos/${id}/transcript`).then((r) => r.json()); applyData(data) } catch { /* ignore */ }
     }, 2000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [id, state.transcriptStatus])

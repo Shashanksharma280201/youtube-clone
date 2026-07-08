@@ -9,6 +9,10 @@ out/
 .env
 .env.local
 .env*.local
+.env.docker
+.env.production
+# workflow local world data
+.workflow-data/
 /graphify-out
 CLAUDE.md
 /public/uploads

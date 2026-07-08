@@ -1,6 +1,9 @@
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["driverAdapters"]
+  // "native" covers local dev + Vercel; the debian target is for the Docker
+  // (bookworm / openssl 3.0.x) image so the query engine loads there too.
+  binaryTargets   = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {

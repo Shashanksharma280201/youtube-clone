@@ -111,7 +111,7 @@ export default function UploadPage() {
       setUploadingIdx(i)
       const { file, title, description } = entries[i]
 
-      const res = await fetch('/api/upload', {
+      const res = await fetch('/api/v1/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: title.trim(), description, filename: file.name, contentType: file.type }),

@@ -20,7 +20,7 @@ export default function LikeButton({ videoId, initialLiked, initialCount }: Like
   async function handleLike() {
     if (!session) { router.push('/login'); return }
     setLoading(true)
-    const res = await fetch(`/api/videos/${videoId}/likes`, { method: 'POST' })
+    const res = await fetch(`/api/v1/videos/${videoId}/likes`, { method: 'POST' })
     const data = await res.json()
     setLoading(false)
     if (res.ok) { setLiked(data.liked); setCount(data.count) }

@@ -1,0 +1,33 @@
+# deps + build output (rebuilt in the image)
+node_modules
+.next
+.turbo
+
+# git + local tooling
+.git
+.gitignore
+.vscode
+
+# secrets + local env (passed at runtime via --env-file / compose)
+.env
+.env.local
+.env*.local
+.env.docker
+.env.production
+
+# local workflow data (self-host world uses Postgres instead)
+.workflow-data
+
+# scratch, knowledge graph, docs, big media
+scratch
+graphify-out
+docs
+*.mp4
+*.pdf
+*.log
+tsconfig.tsbuildinfo
+
+# docker files themselves
+Dockerfile
+docker-compose.yml
+.dockerignore

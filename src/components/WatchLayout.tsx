@@ -164,7 +164,7 @@ export default function WatchLayout({
   const [leftTab, setLeftTab] = useState<'guide' | 'transcript'>(hasGuide ? 'guide' : 'transcript')
 
   useEffect(() => {
-    fetch(`/api/videos/${videoId}/view`, { method: 'PATCH' }).catch(() => {})
+    fetch(`/api/v1/videos/${videoId}/view`, { method: 'PATCH' }).catch(() => {})
   }, [videoId])
 
   useEffect(() => {
@@ -206,7 +206,7 @@ export default function WatchLayout({
     setSearchState('loading')
     setSearchResults([])
     try {
-      const res = await fetch(`/api/videos/${videoId}/search-chapter`, {
+      const res = await fetch(`/api/v1/videos/${videoId}/search-chapter`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query }),
