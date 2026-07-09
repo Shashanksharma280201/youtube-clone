@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { resolveVideo } from '@/lib/video'
+import { signThumbnails } from '@/lib/signUrls'
 import { deleteVideoCompletely } from '@/lib/deleteVideo'
 
 // Full video record (including domainData — the Machine Guide).
@@ -7,7 +8,7 @@ import { deleteVideoCompletely } from '@/lib/deleteVideo'
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const video = await resolveVideo(params.id)
   if (!video) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json(video)
+  return NextResponse.json(await signThumbnails(video))
 }
 
 // Permanently delete a video + all derived data (blob, audio, thumbnails, row).

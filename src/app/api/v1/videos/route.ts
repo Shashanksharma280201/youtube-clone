@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { signThumbnails } from '@/lib/signUrls'
 
 const SELECT = { id:true, title:true, blobUrl:true, views:true, createdAt:true, thumbnailUrl:true } as const
 
@@ -18,5 +19,8 @@ export async function GET(req: Request) {
   })
   const hasMore = items.length > limit
   const page = hasMore ? items.slice(0, limit) : items
-  return NextResponse.json({ items: page, nextCursor: hasMore ? page[page.length-1].id : null })
+  // Capture the cursor before signing: signThumbnails returns copies.
+  const nextCursor = hasMore ? page[page.length - 1].id : null
+  const signed = await Promise.all(page.map((v) => signThumbnails(v)))
+  return NextResponse.json({ items: signed, nextCursor })
 }
