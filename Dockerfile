@@ -20,7 +20,9 @@ RUN npm install --no-audit --no-fund --loglevel=error
 # ships in the image env. (Storage clients are created lazily, so no S3/Azure
 # placeholders are needed.)
 COPY . .
-ENV OPENAI_API_KEY=sk-build-placeholder
+RUN mkdir -p public
+ARG OPENAI_API_KEY=sk-build-placeholder
+ENV OPENAI_API_KEY=${OPENAI_API_KEY}
 RUN npx prisma generate \
     && npm run build
 
@@ -44,6 +46,7 @@ COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/next.config.mjs ./next.config.mjs
+COPY --from=builder /app/instrumentation.ts ./instrumentation.ts
 COPY --from=builder /app/prisma ./prisma
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
