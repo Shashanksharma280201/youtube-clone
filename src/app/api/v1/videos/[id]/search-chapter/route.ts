@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { resolveVideo } from '@/lib/video'
 import { chatComplete } from '@/lib/pipeline/openai'
 
 type TopicSegment = {
@@ -17,7 +17,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const query: string = typeof body.query === 'string' ? body.query.trim() : ''
   if (!query) return NextResponse.json({ found: false })
 
-  const video = await prisma.video.findUnique({ where: { id: params.id } })
+  const video = await resolveVideo(params.id)
   if (!video) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const topicSegments = Array.isArray(video.topicSegments)
