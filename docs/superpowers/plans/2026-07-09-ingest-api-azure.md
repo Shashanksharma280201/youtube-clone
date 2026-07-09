@@ -74,8 +74,11 @@ The repo has no test framework. Later tasks are written test-first, so the runne
 
 **Files:**
 - Create: `vitest.config.ts`
-- Create: `tests/smoke.test.ts`
 - Modify: `package.json` (add `test` script + devDependency)
+
+No test file is created here. A smoke test asserting `1 + 1 === 2` asserts nothing
+about this system and would live in `tests/` forever. The harness is verified with
+`--passWithNoTests`; the first real test arrives in Task 5.
 
 **Interfaces:**
 - Produces: `npm test` runs Vitest over `tests/**/*.test.ts`; `@/…` resolves to `src/…`.
@@ -107,29 +110,26 @@ In the `"scripts"` block, add:
 "test": "vitest run"
 ```
 
-- [ ] **Step 4: Write a smoke test that fails**
+- [ ] **Step 4: Verify the harness runs with no test files yet**
 
-Create `tests/smoke.test.ts`:
+Run: `npx vitest run --passWithNoTests`
+Expected: exit 0, `No test files found`.
 
-```ts
-import { describe, it, expect } from 'vitest'
+- [ ] **Step 5: Verify the alias resolves**
 
-describe('harness', () => {
-  it('runs', () => {
-    expect(1 + 1).toBe(2)
-  })
-})
+This proves `@/…` maps to `src/…` before any test depends on it:
+
+```bash
+node -e "const c=require('./vitest.config.ts');" 2>/dev/null || \
+  grep -q "'@': resolve(__dirname, 'src')" vitest.config.ts && echo "alias configured"
 ```
 
-- [ ] **Step 5: Run the tests**
-
-Run: `npm test`
-Expected: PASS, `1 passed`.
+Expected: `alias configured`.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add package.json package-lock.json vitest.config.ts tests/smoke.test.ts
+git add package.json package-lock.json vitest.config.ts
 git commit -m "test: add vitest harness"
 ```
 
@@ -392,7 +392,7 @@ export function videoWhere(idOrExternalId: string) {
 - [ ] **Step 4: Run it to verify it passes**
 
 Run: `npm test`
-Expected: PASS, `2 passed`.
+Expected: PASS, `1 passed`.
 
 - [ ] **Step 5: Implement the DB helpers**
 
@@ -659,7 +659,7 @@ export async function signThumbnails<T extends WithThumbs>(
 - [ ] **Step 4: Run it to verify it passes**
 
 Run: `npm test`
-Expected: PASS, `4 passed`.
+Expected: PASS, `3 passed`.
 
 - [ ] **Step 5: Sign in `GET /api/v1/videos/[id]`**
 
@@ -1086,7 +1086,7 @@ Expected: `200`.
 - [ ] **Step 8: Run the unit tests once more**
 
 Run: `npm test`
-Expected: PASS, `4 passed`.
+Expected: PASS, `3 passed`.
 
 - [ ] **Step 9: Document the endpoint in `docs/API.md`**
 
