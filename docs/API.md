@@ -50,6 +50,15 @@ Every call carries `Authorization: Bearer <SERVICE_API_KEY>`.
 5. GET  /api/v1/videos/{id}            -> full video incl. domainData (the Machine Guide)
 ```
 
+If another service has **already written the video into the storage container**, skip
+steps 1-3 and use ingest-by-reference instead:
+
+```
+1. POST /api/v1/ingest                 -> 202 { id, externalId, status, runId }
+2. GET  /api/v1/videos/{videoId}/transcript -> poll until "DONE"
+3. GET  /api/v1/videos/{videoId}       -> full video incl. domainData
+```
+
 ---
 
 ## Endpoints
@@ -57,6 +66,26 @@ Every call carries `Authorization: Bearer <SERVICE_API_KEY>`.
 ### GET `/api/health` **[open]**
 Liveness/readiness probe (not gated).
 - **200** → `{ "status": "ok", "ts": "2026-07-08T12:00:00.000Z" }`
+
+---
+
+### POST `/api/v1/ingest` **[key]**
+Register a video that **already exists** in the storage container and start the pipeline.
+Use this when another service wrote the file directly to Azure Blob / S3 — no bytes pass through this service.
+- **Request**
+  ```json
+  { "videoId": "ext-123 (required, your ID)",
+    "videoName": "videos/pump-repair.mp4 (required, blob key in the container)",
+    "title": "string (optional, defaults to videoName)",
+    "description": "string (optional)" }
+  ```
+- **202** → `{ "id": "cuid", "externalId": "ext-123", "status": "PROCESSING", "runId": "..." }`
+- **200** → same shape (no `runId`), when `videoId` was already ingested. Idempotent: no duplicate row, no second pipeline run.
+- **400** `{ "error": "videoId and videoName are required" }`
+- **404** `{ "error": "Video file not found in storage" }` (the blob key does not exist)
+- **401** `{ "error": "Unauthorized" }`
+- **500** `{ "error": "Failed to start processing" }` (the row is marked `FAILED`)
+- **Next step:** poll `GET /api/v1/videos/{videoId}/transcript` until `DONE`, then `GET /api/v1/videos/{videoId}`.
 
 ---
 
@@ -149,9 +178,10 @@ Permanently delete a video and everything derived from it (S3 blob, audio chunks
 ```ts
 {
   id: string
+  externalId: string | null       // ID supplied by the ingesting service via /ingest
   title: string
   description: string
-  blobUrl: string                 // S3 URL of the source video
+  blobUrl: string                 // storage URL of the source video (Azure Blob or S3)
   createdAt: string               // ISO
   views: number
   thumbnailUrl: string | null     // first chapter thumbnail
@@ -316,6 +346,8 @@ Step = {
 `PENDING` → `PROCESSING` → `DONE` (or `FAILED`). Poll `GET /api/v1/videos/{id}/transcript` until terminal, then read the full result from `GET /api/v1/videos/{id}`.
 
 ## Notes for integrators
+- **Addressing videos:** every `/api/v1/videos/{id}` route accepts either the `id` we generated or the `videoId` you supplied to `/ingest` (stored as `externalId`). Both resolve to the same video.
+- **Thumbnails:** `thumbnailUrl` and `topicSegments[].thumbnailPath` are short-lived **signed** URLs (valid about 6 hours), because the storage container is private. Fetch or copy them promptly; re-request the video to get fresh ones. Do not persist them.
 - **Auth:** send `Authorization: Bearer <SERVICE_API_KEY>` on every `/api/v1/*` call. The key authenticates the whole calling service (there are no per-user identities). Rotate by updating `SERVICE_API_KEY` (comma-separated list supported).
 - **Uploads:** the `PUT` to `uploadUrl` goes straight to the object store (Azure Blob or S3) and does **not** carry the API key (the presigned URL is the credential). Send the same `Content-Type` you passed to `/upload`, plus every header returned in `uploadHeaders`.
 - **Long jobs:** transcription of a 1–4hr video runs as a durable background workflow and can take many minutes to hours (it paces around the transcription rate limit). Poll `/transcript`, don't block.
