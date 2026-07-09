@@ -1,9 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 
 interface FileEntry {
   file: File
@@ -36,7 +34,6 @@ function extractThumbnail(file: File): Promise<string | null> {
 }
 
 export default function UploadPage() {
-  const { data: session, status } = useSession()
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -44,30 +41,6 @@ export default function UploadPage() {
   const [uploadingIdx, setUploadingIdx] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [isDragging, setIsDragging] = useState(false)
-
-  if (status === 'loading') {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-7 h-7 border-2 border-nb-violet border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
-  }
-
-  if (!session) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4">
-        <div className="w-16 h-16 rounded-2xl bg-yt-hover border border-yt-border flex items-center justify-center mb-2">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-8 h-8 text-slate-400">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-          </svg>
-        </div>
-        <p className="text-yt-muted text-sm">You need to be signed in to upload videos.</p>
-        <Link href="/login" className="bg-gradient-to-r from-nb-violet to-nb-indigo text-white px-6 py-2.5 rounded-xl font-medium shadow-violet-btn hover:opacity-90 transition-opacity">
-          Sign in
-        </Link>
-      </div>
-    )
-  }
 
   function addFiles(fileList: FileList | null) {
     if (!fileList) return
@@ -119,8 +92,12 @@ export default function UploadPage() {
       const data = await res.json()
       if (!res.ok) { setError(`"${title}" failed: ${data.error ?? 'Upload error'}`); setUploadingIdx(null); return }
 
-      const s3Res = await fetch(data.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } })
-      if (!s3Res.ok) { setError(`"${title}" failed: S3 upload error`); setUploadingIdx(null); return }
+      const s3Res = await fetch(data.uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type, ...(data.uploadHeaders || {}) },
+      })
+      if (!s3Res.ok) { setError(`"${title}" failed: storage upload error`); setUploadingIdx(null); return }
 
       ids.push(data.id)
     }

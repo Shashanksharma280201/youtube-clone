@@ -8,14 +8,12 @@
 // video to the exact moment.
 //
 // Orchestration-agnostic (no Workflow/Vercel imports).
-import OpenAI from "openai";
 import type { TaggedSegment, VideoSegment } from "./types";
+import { chatComplete } from "./openai";
 import { EMPTY_DOMAIN, asDomainData, hasDomainContent, type DomainData } from "./domain-types";
 
 export { EMPTY_DOMAIN, hasDomainContent } from "./domain-types";
 export type { DomainData, DebugItem, Procedure, Step, GuideItem, SpecItem, GlossaryTerm } from "./domain-types";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // gpt-4o handles ~128k tokens. ~300k chars ≈ 75k tokens leaves room for the big
 // JSON output, and covers a ~4hr video in ONE coherent pass (no truncation).
@@ -62,8 +60,7 @@ function fmtClock(sec: number): string {
 }
 
 async function runPass(user: string): Promise<Record<string, unknown>> {
-  const res = await openai.chat.completions.create({
-    model: "gpt-4o",
+  const res = await chatComplete({
     temperature: 0,
     response_format: { type: "json_object" },
     max_tokens: 16000, // rich debug flows + glossary need lots of room

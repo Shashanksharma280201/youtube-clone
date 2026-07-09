@@ -20,11 +20,7 @@ export async function deleteVideoCompletely(videoId: string): Promise<boolean> {
     deleteS3Prefix(`thumbnails/${videoId}/`),
   ])
 
-  await prisma.$transaction([
-    prisma.like.deleteMany({ where: { videoId } }),
-    prisma.comment.deleteMany({ where: { videoId } }),
-    prisma.video.delete({ where: { id: videoId } }),
-  ])
+  await prisma.video.delete({ where: { id: videoId } })
 
   return true
 }

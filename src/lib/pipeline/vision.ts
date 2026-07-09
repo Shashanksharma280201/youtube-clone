@@ -1,6 +1,6 @@
 // GPT-4o Vision describes what's happening on screen during silent / no-speech
 // stretches, so wordless videos still get meaningful chapters.
-import OpenAI from "openai";
+import { chatComplete } from "./openai";
 import { readFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import { join } from "path";
@@ -14,7 +14,6 @@ import {
 } from "./types";
 import type { Step } from "./domain-types";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Extract `count` plain-sentence descriptions from a model response that may be
 // markdown-fenced (```json …```), wrapped in an object, or slightly malformed.
@@ -64,8 +63,7 @@ export async function describeFramesBatch(framePaths: string[]): Promise<string[
 
     try {
       if (batch.length === 1) {
-        const res = await openai.chat.completions.create({
-          model: "gpt-4o",
+        const res = await chatComplete({
           max_tokens: 120,
           messages: [
             {
@@ -85,8 +83,7 @@ export async function describeFramesBatch(framePaths: string[]): Promise<string[
         descriptions.push(text && !text.startsWith("[") && !text.startsWith("{") ? text : parseDescriptions(text, 1)[0]);
       } else {
         // json_object mode guarantees parseable JSON — no markdown fences to trip on.
-        const res = await openai.chat.completions.create({
-          model: "gpt-4o",
+        const res = await chatComplete({
           max_tokens: 500,
           response_format: { type: "json_object" },
           messages: [
@@ -172,8 +169,7 @@ const MAX_LOCATED_STEPS = 30; // cap vision calls per video
 async function locateComponent(framePath: string, stepText: string): Promise<string> {
   const bytes = await readFile(framePath);
   try {
-    const res = await openai.chat.completions.create({
-      model: "gpt-4o",
+    const res = await chatComplete({
       max_tokens: 70,
       messages: [
         {

@@ -14,13 +14,13 @@ COPY package.json package-lock.json ./
 RUN npm install --no-audit --no-fund --loglevel=error
 
 # Copy source and build (Prisma client + Next build with the Workflow compiler).
-# Several routes construct OpenAI/Groq SDK clients at module load, which `next build`
-# evaluates — so provide PLACEHOLDER keys at build time. Real values are injected
-# at runtime via the container env; these placeholders never ship in the image env.
+# A couple of modules construct the OpenAI SDK client at module load, which
+# `next build` evaluates — so provide a PLACEHOLDER key at build time. The real
+# value is injected at runtime via the container env; this placeholder never
+# ships in the image env. (Storage clients are created lazily, so no S3/Azure
+# placeholders are needed.)
 COPY . .
-ENV OPENAI_API_KEY=sk-build-placeholder \
-    GROQ_API_KEY=gsk-build-placeholder \
-    NEXTAUTH_SECRET=build-time-placeholder
+ENV OPENAI_API_KEY=sk-build-placeholder
 RUN npx prisma generate \
     && npm run build
 

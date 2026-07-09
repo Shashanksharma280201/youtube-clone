@@ -2,7 +2,6 @@
 
 import { useRef, useState, useEffect, useMemo, useCallback } from 'react'
 import { tagColor } from '@/lib/tagColor'
-import LikeButton from '@/components/LikeButton'
 import DeleteVideoButton from '@/components/DeleteVideoButton'
 import WatchTranscript from '@/components/WatchTranscript'
 import MachineGuide from '@/components/MachineGuide'
@@ -22,14 +21,9 @@ interface WatchLayoutProps {
   src: string
   title: string
   description: string | null
-  userName: string
-  userInitial: string
   views: number
   createdAt: string
-  isOwner: boolean
   segments: VideoSegment[]
-  initialLiked: boolean
-  initialLikeCount: number
   transcriptStatus: string
   transcript: string | null
   transcriptSegments: unknown
@@ -135,14 +129,9 @@ export default function WatchLayout({
   src,
   title,
   description,
-  userName,
-  userInitial,
   views,
   createdAt,
-  isOwner,
   segments,
-  initialLiked,
-  initialLikeCount,
   transcriptStatus,
   transcript,
   transcriptSegments,
@@ -261,20 +250,9 @@ export default function WatchLayout({
           <h1 className="text-yt-text text-xl font-bold mt-4 mb-3 leading-snug">{title}</h1>
 
           {/* Stats row */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-yt-border">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-nb-violet to-nb-indigo flex items-center justify-center text-white font-bold shrink-0">
-                {userInitial}
-              </div>
-              <div>
-                <p className="text-yt-text font-semibold text-sm">{userName}</p>
-                <p className="text-yt-muted text-xs">{formatViews(views)} views · {timeAgo(createdAt)}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <LikeButton videoId={videoId} initialLiked={initialLiked} initialCount={initialLikeCount} />
-              {isOwner && <DeleteVideoButton videoId={videoId} />}
-            </div>
+          <div className="flex items-center justify-between gap-3 pb-4 border-b border-yt-border">
+            <p className="text-yt-muted text-xs">{formatViews(views)} views · {timeAgo(createdAt)}</p>
+            <DeleteVideoButton videoId={videoId} />
           </div>
 
           {/* Description */}

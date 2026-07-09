@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
-const SELECT = { id:true, title:true, blobUrl:true, views:true, createdAt:true, thumbnailUrl:true, user:{ select:{ name:true } } } as const
+const SELECT = { id:true, title:true, blobUrl:true, views:true, createdAt:true, thumbnailUrl:true } as const
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)

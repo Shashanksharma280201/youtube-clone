@@ -1,21 +1,17 @@
 'use client'
 
 import Link from 'next/link'
-import { useSession, signOut } from 'next-auth/react'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 
 export default function Navbar() {
-  const { data: session } = useSession()
   const router = useRouter()
   const pathname = usePathname()
 
-  const [menuOpen, setMenuOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
 
-  const menuRef = useRef<HTMLDivElement>(null)
   const mobileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -27,14 +23,6 @@ export default function Navbar() {
     const onScroll = () => setScrolled(window.scrollY > 4)
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
-  }, [])
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
   }, [])
 
   function handleSearch(e: React.FormEvent) {
@@ -148,91 +136,20 @@ export default function Navbar() {
           </svg>
         </button>
 
-        {session ? (
-          <>
-            {/* Upload button */}
-            <Link
-              href="/upload"
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-sm font-medium transition-all duration-200 border ${
-                isUpload
-                  ? 'bg-nb-violet/10 text-nb-violet border-nb-violet/30'
-                  : 'bg-white hover:bg-yt-hover text-yt-text border-yt-border hover:border-slate-300'
-              }`}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 shrink-0">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-              </svg>
-              <span className="hidden sm:inline">Upload</span>
-            </Link>
-
-            {/* Avatar + dropdown */}
-            <div className="relative" ref={menuRef}>
-              <button
-                onClick={() => setMenuOpen(!menuOpen)}
-                className={`w-8 h-8 rounded-xl bg-gradient-to-br from-nb-violet to-nb-indigo flex items-center justify-center text-white font-bold text-sm transition-all duration-200 ${
-                  menuOpen ? 'ring-2 ring-nb-violet/40 ring-offset-2' : 'hover:ring-2 hover:ring-nb-violet/25 hover:ring-offset-2'
-                }`}
-              >
-                {session.user.name?.[0]?.toUpperCase()}
-              </button>
-
-              {menuOpen && (
-                <div className="absolute right-0 mt-2 w-60 bg-white border border-yt-border rounded-2xl shadow-card-md overflow-hidden z-50">
-                  {/* User header */}
-                  <div className="flex items-center gap-3 px-4 py-4 border-b border-yt-border bg-yt-hover/60">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-nb-violet to-nb-indigo flex items-center justify-center text-white font-bold shrink-0">
-                      {session.user.name?.[0]?.toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-yt-text truncate">{session.user.name}</p>
-                      <p className="text-xs text-yt-muted truncate">{session.user.email}</p>
-                    </div>
-                  </div>
-
-                  <div className="p-1.5">
-                    <Link
-                      href="/upload"
-                      onClick={() => setMenuOpen(false)}
-                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-yt-text hover:bg-yt-hover transition-colors group"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4 text-yt-muted group-hover:text-nb-violet shrink-0 transition-colors">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                      </svg>
-                      Upload video
-                    </Link>
-
-                    <div className="my-1 border-t border-yt-border" />
-
-                    <button
-                      onClick={() => { setMenuOpen(false); signOut({ callbackUrl: '/' }) }}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-yt-text hover:bg-yt-hover transition-colors text-left group"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4 text-yt-muted group-hover:text-nb-red shrink-0 transition-colors">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
-                      </svg>
-                      Sign out
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="flex items-center gap-2">
-            <Link
-              href="/login"
-              className="text-sm text-yt-text border border-yt-border hover:bg-yt-hover px-4 py-1.5 rounded-xl transition-colors font-medium"
-            >
-              Sign in
-            </Link>
-            <Link
-              href="/register"
-              className="text-sm bg-gradient-to-r from-nb-violet to-nb-indigo text-white px-4 py-1.5 rounded-xl font-medium shadow-violet-btn hover:opacity-90 transition-opacity"
-            >
-              Register
-            </Link>
-          </div>
-        )}
+        {/* Upload button (internal service — no login) */}
+        <Link
+          href="/upload"
+          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-sm font-medium transition-all duration-200 border ${
+            isUpload
+              ? 'bg-nb-violet/10 text-nb-violet border-nb-violet/30'
+              : 'bg-white hover:bg-yt-hover text-yt-text border-yt-border hover:border-slate-300'
+          }`}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 shrink-0">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+          </svg>
+          <span className="hidden sm:inline">Upload</span>
+        </Link>
       </div>
     </header>
   )

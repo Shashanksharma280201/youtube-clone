@@ -1,105 +1,29 @@
-import {
-  S3Client,
-  PutObjectCommand,
-  GetObjectCommand,
-  DeleteObjectCommand,
-  DeleteObjectsCommand,
-  ListObjectsV2Command,
-} from '@aws-sdk/client-s3'
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import { createWriteStream, existsSync } from 'fs'
-import { rename, unlink } from 'fs/promises'
-import { pipeline } from 'stream/promises'
-import { Readable } from 'stream'
-import { join } from 'path'
-import { tmpdir } from 'os'
+// Storage facade. Uses Azure Blob Storage when AZURE_STORAGE_* credentials are
+// present, otherwise falls back to AWS S3 (the original backend). Callers import
+// the same function names regardless of which backend is active — the "s3" naming
+// is kept for backward compatibility and does not imply AWS.
+import { s3Backend } from './storage/s3'
+import { azureBackend } from './storage/azure'
+import type { StorageBackend } from './storage/types'
 
-export const s3 = new S3Client({
-  region: process.env.AWS_REGION!,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  },
-})
+export type { UploadTarget } from './storage/types'
 
-export const BUCKET = process.env.AWS_S3_BUCKET!
+const USE_AZURE = !!(
+  process.env.AZURE_STORAGE_ACCOUNT &&
+  process.env.AZURE_STORAGE_KEY &&
+  process.env.AZURE_STORAGE_CONTAINER
+)
 
-export function s3Url(key: string) {
-  return `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`
-}
+const backend: StorageBackend = USE_AZURE ? azureBackend : s3Backend
 
-export function s3Key(url: string) {
-  return url.replace(`https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/`, '')
-}
+export const STORAGE_BACKEND = USE_AZURE ? 'azure' : 's3'
 
-export async function getPresignedUploadUrl(key: string, contentType: string) {
-  const cmd = new PutObjectCommand({ Bucket: BUCKET, Key: key, ContentType: contentType })
-  return getSignedUrl(s3, cmd, { expiresIn: 3600 })
-}
-
-export async function getPresignedDownloadUrl(key: string, expiresIn = 6 * 3600) {
-  const cmd = new GetObjectCommand({ Bucket: BUCKET, Key: key })
-  return getSignedUrl(s3, cmd, { expiresIn })
-}
-
-export async function downloadFromS3(key: string, localPath: string) {
-  const cmd = new GetObjectCommand({ Bucket: BUCKET, Key: key })
-  const res = await s3.send(cmd)
-  const chunks: Uint8Array[] = []
-  for await (const chunk of res.Body as AsyncIterable<Uint8Array>) chunks.push(chunk)
-  const { writeFile } = await import('fs/promises')
-  await writeFile(localPath, Buffer.concat(chunks))
-}
-
-// Download the video to a stable local path once and reuse it across steps.
-// The static ffmpeg binary segfaults on https ranged reads, so every ffmpeg op
-// runs against a local file instead. On one machine (local dev, or a single
-// Fluid Compute instance) this downloads once; across separate step invocations
-// it re-downloads, which is correct but worth optimizing later (pre-split audio).
-// Streams to disk via a temp file + atomic rename so parallel steps can't collide.
-export async function ensureLocalVideo(videoId: string, key: string): Promise<string> {
-  const finalPath = join(tmpdir(), `wf-video-${videoId}`)
-  if (existsSync(finalPath)) return finalPath
-
-  const tmpPath = `${finalPath}.${process.pid}.${Date.now()}.part`
-  const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }))
-  await pipeline(res.Body as Readable, createWriteStream(tmpPath))
-  if (!existsSync(finalPath)) {
-    try {
-      await rename(tmpPath, finalPath)
-      return finalPath
-    } catch { /* another worker won the race */ }
-  }
-  // finalPath already existed (or rename lost the race) → discard our temp copy
-  // so we don't leak a multi-hundred-MB orphan .part file.
-  await unlink(tmpPath).catch(() => {})
-  return finalPath
-}
-
-export async function uploadToS3(localPath: string, key: string, contentType: string) {
-  const { readFile } = await import('fs/promises')
-  const body = await readFile(localPath)
-  await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: body, ContentType: contentType }))
-  return s3Url(key)
-}
-
-// Delete a single object. No-op if it doesn't exist (S3 delete is idempotent).
-export async function deleteFromS3(key: string) {
-  await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }))
-}
-
-// Delete every object under a prefix (e.g. `audio/<videoId>/`, `thumbnails/<videoId>/`),
-// paging through results and batch-deleting up to 1000 keys at a time.
-export async function deleteS3Prefix(prefix: string) {
-  let ContinuationToken: string | undefined
-  do {
-    const list = await s3.send(
-      new ListObjectsV2Command({ Bucket: BUCKET, Prefix: prefix, ContinuationToken }),
-    )
-    const objects = (list.Contents ?? []).map((o) => ({ Key: o.Key! }))
-    if (objects.length > 0) {
-      await s3.send(new DeleteObjectsCommand({ Bucket: BUCKET, Delete: { Objects: objects } }))
-    }
-    ContinuationToken = list.IsTruncated ? list.NextContinuationToken : undefined
-  } while (ContinuationToken)
-}
+export const s3Url = backend.s3Url
+export const s3Key = backend.s3Key
+export const getPresignedUploadUrl = backend.getPresignedUploadUrl
+export const getPresignedDownloadUrl = backend.getPresignedDownloadUrl
+export const downloadFromS3 = backend.downloadFromS3
+export const ensureLocalVideo = backend.ensureLocalVideo
+export const uploadToS3 = backend.uploadToS3
+export const deleteFromS3 = backend.deleteFromS3
+export const deleteS3Prefix = backend.deleteS3Prefix

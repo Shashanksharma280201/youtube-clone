@@ -106,24 +106,34 @@ else
   prompt_var DATABASE_URL "DATABASE_URL (pooled Neon connection string)"
   prompt_var DIRECT_URL   "DIRECT_URL (direct/non-pooled Neon connection string)"
 
-  info "Auth:"
+  info "Service auth (key external callers send as 'Authorization: Bearer <key>'):"
   if command -v openssl >/dev/null 2>&1; then
-    printf 'NEXTAUTH_SECRET=%s\n' "$(openssl rand -base64 32)" >> "$ENV_FILE"
-    info "NEXTAUTH_SECRET auto-generated."
+    printf 'SERVICE_API_KEY=%s\n' "$(openssl rand -hex 32)" >> "$ENV_FILE"
+    info "SERVICE_API_KEY auto-generated."
   else
-    prompt_var NEXTAUTH_SECRET "NEXTAUTH_SECRET (random 32+ character string)"
+    prompt_var SERVICE_API_KEY "SERVICE_API_KEY (random key; blank = open API)"
   fi
-  prompt_var NEXTAUTH_URL "NEXTAUTH_URL" "http://localhost:3000"
 
-  info "AWS S3 (video storage):"
-  prompt_var AWS_ACCESS_KEY_ID     "AWS_ACCESS_KEY_ID"
-  prompt_var AWS_SECRET_ACCESS_KEY "AWS_SECRET_ACCESS_KEY"
-  prompt_var AWS_REGION            "AWS_REGION" "ap-south-1"
-  prompt_var AWS_S3_BUCKET         "AWS_S3_BUCKET"
+  info "Video storage - choose a backend:"
+  info "  1) AWS S3 (default)"
+  info "  2) Azure Blob Storage"
+  read -r -p "    Storage backend [1]: " storage_choice
+  storage_choice="${storage_choice:-1}"
+  if [ "$storage_choice" = "2" ]; then
+    info "Azure Blob Storage:"
+    prompt_var AZURE_STORAGE_ACCOUNT   "AZURE_STORAGE_ACCOUNT (storage account name)"
+    prompt_var AZURE_STORAGE_KEY       "AZURE_STORAGE_KEY (account access key)"
+    prompt_var AZURE_STORAGE_CONTAINER "AZURE_STORAGE_CONTAINER (container name)"
+  else
+    info "AWS S3:"
+    prompt_var AWS_ACCESS_KEY_ID     "AWS_ACCESS_KEY_ID"
+    prompt_var AWS_SECRET_ACCESS_KEY "AWS_SECRET_ACCESS_KEY"
+    prompt_var AWS_REGION            "AWS_REGION" "ap-south-1"
+    prompt_var AWS_S3_BUCKET         "AWS_S3_BUCKET"
+  fi
 
-  info "AI providers:"
+  info "AI (OpenAI — transcription + tagging + vision + guide):"
   prompt_var OPENAI_API_KEY "OPENAI_API_KEY"
-  prompt_var GROQ_API_KEY   "GROQ_API_KEY"
 
   info "Pipeline:"
   prompt_var CHUNK_MINUTES "CHUNK_MINUTES (minutes of video per transcription chunk)" "10"

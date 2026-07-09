@@ -1,6 +1,6 @@
-// Speech-to-text via Groq Whisper. On a 429 we throw a typed RateLimitedError
-// carrying the retry-after seconds, so the orchestrator can pace durably instead
-// of failing (Groq's free tier caps audio-seconds per rolling hour).
+// Speech-to-text via OpenAI Whisper (whisper-1). On a 429 we throw a typed
+// RateLimitedError carrying the retry-after seconds, so the orchestrator can pace
+// durably instead of failing.
 import OpenAI from "openai";
 import { readFile } from "fs/promises";
 import {
@@ -9,10 +9,7 @@ import {
   type RawSegment,
 } from "./types";
 
-const groq = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY ?? "",
-  baseURL: "https://api.groq.com/openai/v1",
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export type WhisperSeg = {
   id: number;
@@ -58,9 +55,9 @@ export async function transcribeAudioFile(filePath: string): Promise<WhisperSeg[
   const bytes = await readFile(filePath);
   const file = new File([bytes], "audio.mp3", { type: "audio/mpeg" });
   try {
-    const result = await groq.audio.transcriptions.create({
+    const result = await openai.audio.transcriptions.create({
       file,
-      model: "whisper-large-v3-turbo",
+      model: "whisper-1",
       response_format: "verbose_json",
       timestamp_granularities: ["segment"],
     });
@@ -75,7 +72,7 @@ export async function transcribeAudioFile(filePath: string): Promise<WhisperSeg[
     const e = err as ApiError;
     if (e?.status === 429) {
       throw new RateLimitedError(
-        `Groq rate limit: ${e.error?.message ?? "audio-seconds per hour exceeded"}`,
+        `OpenAI rate limit: ${e.error?.message ?? "rate limit exceeded"}`,
         parseRetryAfter(e),
       );
     }

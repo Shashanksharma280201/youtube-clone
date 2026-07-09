@@ -11,34 +11,41 @@ HTTP API for uploading videos, running the AI transcription + Machine-Guide pipe
 
 ## Versioning
 
-The data API is versioned under **`/api/v1/`**. Breaking changes will ship as a new prefix (`/api/v2/`) so existing integrations keep working — pin to `v1`.
-
-Two endpoints are **unversioned by convention** (framework/infra): `GET /api/health` (probe) and `/api/auth/*` (NextAuth). These are stable and not part of the versioned data contract.
+The data API is versioned under **`/api/v1/`**. Breaking changes will ship as a new prefix (`/api/v2/`) so existing integrations keep working — pin to `v1`. `GET /api/health` is unversioned by convention (an infra probe).
 
 ---
 
-## Authentication — read this first
+## Authentication
 
-The app currently authenticates **users** with NextAuth (cookie/session based). There is **no machine-to-machine API key yet**. So for a service integration:
+This is an **internal service** — there are **no user accounts or logins**. Access to the data API (`/api/v1/*`) is controlled by a single **service API key**.
 
-| Endpoint group | Auth today |
-|---|---|
-| `GET` reads (videos, transcript, health, search) | **Public** — callable directly |
-| Writes (`upload`, `transcribe`, `delete`, `like`) | **Session cookie** required (from a logged-in user) |
+A request to `/api/v1/*` is allowed if **either**:
+- it presents the key: `Authorization: Bearer <SERVICE_API_KEY>`, **or**
+- it is a **same-origin** request from the app's own web UI (so the built-in UI works without exposing the key).
 
-**Recommended for service-to-service:** add a shared **API key / bearer token** layer (a small middleware that accepts `Authorization: Bearer <API_KEY>` on the write endpoints and maps to a service user). This is a planned addition for the Azure deployment — until then, a consuming service must either (a) only use the public read endpoints, or (b) authenticate as a user and forward the `next-auth.session-token` cookie.
+Anything else gets **`401 { "error": "Unauthorized" }`**.
 
-Endpoints below are marked **[public]**, **[session]**, or **[session + owner]**.
+```bash
+curl -H "Authorization: Bearer $SERVICE_API_KEY" https://<host>/api/v1/videos
+```
+
+- Set `SERVICE_API_KEY` in the server environment. It may be a **comma-separated list** for zero-downtime rotation.
+- If `SERVICE_API_KEY` is unset, the gate is **open** (dev convenience) — always set it in shared/production environments.
+- `GET /api/health` is **not** gated (for liveness/readiness probes).
+
+Every `/api/v1/*` endpoint below is marked **[key]** (requires the key or same-origin). `GET /api/health` is **[open]**.
 
 ---
 
 ## Typical integration flow
 
+Every call carries `Authorization: Bearer <SERVICE_API_KEY>`.
+
 ```
-1. POST /api/v1/upload                 -> { id, uploadUrl }        (create video row + get S3 URL)
-2. PUT  <uploadUrl>  (raw file)     -> 200                       (upload the video to S3)
-3. POST /api/v1/videos/{id}/transcribe -> { status, runId }         (kick off the AI pipeline)
-4. GET  /api/v1/videos/{id}/transcript -> { status: PROCESSING }    (poll every few seconds)
+1. POST /api/v1/upload                 -> { id, uploadUrl, uploadHeaders }  (create video row + get storage URL)
+2. PUT  <uploadUrl>  (raw file)        -> 200                      (upload to storage, no key — presigned; add uploadHeaders)
+3. POST /api/v1/videos/{id}/transcribe -> { status, runId }        (kick off the AI pipeline)
+4. GET  /api/v1/videos/{id}/transcript -> { status: PROCESSING }   (poll every few seconds)
    ... repeat until status = "DONE" (or "FAILED")
 5. GET  /api/v1/videos/{id}            -> full video incl. domainData (the Machine Guide)
 ```
@@ -47,54 +54,38 @@ Endpoints below are marked **[public]**, **[session]**, or **[session + owner]**
 
 ## Endpoints
 
-### GET `/api/health` **[public]**
-Liveness/readiness probe.
+### GET `/api/health` **[open]**
+Liveness/readiness probe (not gated).
 - **200** → `{ "status": "ok", "ts": "2026-07-08T12:00:00.000Z" }`
 
 ---
 
-### POST `/api/v1/register` **[public]**
-Create a user account.
-- **Request**
-  ```json
-  { "name": "string", "email": "string", "password": "string (min 6 chars)" }
-  ```
-- **201** → `{ "id": "string", "name": "string", "email": "string", "createdAt": "ISO" }`
-- **400** `{ "error": "All fields are required" | "Password must be at least 6 characters" }`
-- **409** `{ "error": "Email already in use" }`
-
----
-
-### `/api/auth/[...nextauth]` **[public]**
-NextAuth handler (login, session, csrf). Credentials login is `POST /api/auth/callback/credentials` with `{ email, password }`; a successful login sets the `next-auth.session-token` cookie used by the `[session]` endpoints. Use the standard NextAuth client flow.
-
----
-
-### POST `/api/v1/upload` **[session]**
-Create a video record and get a **presigned S3 URL** to upload the file to. The server never receives the file bytes.
+### POST `/api/v1/upload` **[key]**
+Create a video record and get a **presigned upload URL** to send the file to. The server never receives the file bytes. The URL points at whichever object store is configured (Azure Blob if `AZURE_STORAGE_*` is set, otherwise AWS S3).
 - **Request**
   ```json
   { "title": "string (required)", "description": "string (optional)",
     "filename": "string (required)", "contentType": "string (e.g. video/mp4)" }
   ```
-- **201** → `{ "id": "videoId", "uploadUrl": "https://<bucket>.s3...(presigned PUT)" }`
+- **201** → `{ "id": "videoId", "uploadUrl": "https://...(presigned PUT)", "uploadHeaders": { } }`
+  - `uploadHeaders` is an object of extra headers you MUST include on the PUT. Empty `{}` for S3; `{ "x-ms-blob-type": "BlockBlob" }` for Azure Blob.
 - **400** `{ "error": "Title and filename are required" }`
-- **401** `{ "error": "Unauthorized" }`
-- **500** `{ "error": "Session expired — please sign out and sign in again" | "Upload failed" }`
-- **Next step:** `PUT` the raw file bytes to `uploadUrl` with header `Content-Type: <same contentType>`. On success the video exists with `transcriptStatus: "PENDING"`.
+- **401** `{ "error": "Unauthorized" }` (missing/invalid key)
+- **500** `{ "error": "Upload failed" }`
+- **Next step:** `PUT` the raw file bytes to `uploadUrl` with header `Content-Type: <same contentType>` **plus every header in `uploadHeaders`**. On success the video exists with `transcriptStatus: "PENDING"`.
 
 ---
 
-### POST `/api/v1/videos/{id}/transcribe` **[session + owner]**
-Start the durable AI pipeline (audio → Groq transcript → chapters → silent-frame vision → Machine Guide). Idempotent: only starts if the video is `NONE|PENDING|FAILED`.
+### POST `/api/v1/videos/{id}/transcribe` **[key]**
+Start the durable AI pipeline (audio → OpenAI Whisper transcript → chapters → silent-frame vision → Machine Guide). Idempotent: only starts if the video is `NONE|PENDING|FAILED`.
 - **Request:** none.
 - **200 (started)** → `{ "status": "PROCESSING", "runId": "wrun_..." }`
 - **200 (already running/done)** → `{ "status": "PROCESSING" | "DONE" }`
-- **401** `{ "error": "Unauthorized" }` · **403** `{ "error": "Forbidden" }` · **404** `{ "error": "Not found" }`
+- **401** `{ "error": "Unauthorized" }` · **404** `{ "error": "Not found" }`
 
 ---
 
-### GET `/api/v1/videos/{id}/transcript` **[public]**
+### GET `/api/v1/videos/{id}/transcript` **[key]**
 Poll pipeline status + read transcript/chapters. Use this to know when processing is done.
 - **200** →
   ```json
@@ -110,27 +101,27 @@ Poll pipeline status + read transcript/chapters. Use this to know when processin
 
 ---
 
-### GET `/api/v1/videos/{id}` **[public]**
+### GET `/api/v1/videos/{id}` **[key]**
 Full video record — **including the structured Machine Guide (`domainData`)**. This is the main endpoint a consuming service reads after `status = DONE`.
-- **200** → `Video` (see [Data models](#data-models)) with `user` and `_count` included.
+- **200** → `Video` (see [Data models](#data-models)).
 - **404** `{ "error": "Not found" }`
 
 ---
 
-### GET `/api/v1/videos` **[public]**
+### GET `/api/v1/videos` **[key]**
 Paginated video feed (newest first), with optional title search.
 - **Query params:** `limit` (default 12, max 48), `cursor` (video id to page after), `q` (title contains, case-insensitive).
 - **200** →
   ```json
   {
-    "items": [ { "id","title","blobUrl","views","createdAt","thumbnailUrl","user":{"name"} } ],
+    "items": [ { "id","title","blobUrl","views","createdAt","thumbnailUrl" } ],
     "nextCursor": "string | null"
   }
   ```
 
 ---
 
-### POST `/api/v1/videos/{id}/search-chapter` **[public]**
+### POST `/api/v1/videos/{id}/search-chapter` **[key]**
 Semantic chapter search in any language (translates, then matches chapters). Returns matching chapters.
 - **Request** `{ "query": "string" }`
 - **200 (match)** → `{ "found": true, "results": [ { "index": number, "segment": TopicSegment } ] }`
@@ -139,24 +130,16 @@ Semantic chapter search in any language (translates, then matches chapters). Ret
 
 ---
 
-### POST `/api/v1/videos/{id}/likes` **[session]**
-Toggle the current user's like on a video.
-- **Request:** none.
-- **200** → `{ "liked": boolean, "count": number }`
-- **401** `{ "error": "Please login or create an account" }`
-
----
-
-### PATCH `/api/v1/videos/{id}/view` **[public]**
+### PATCH `/api/v1/videos/{id}/view` **[key]**
 Increment the view counter (best-effort).
 - **200** → `{ "ok": true }`
 
 ---
 
-### DELETE `/api/v1/videos/{id}` **[session + owner]**
-Permanently delete a video and everything derived from it (S3 blob, audio chunks, thumbnails, DB rows + likes/comments).
+### DELETE `/api/v1/videos/{id}` **[key]**
+Permanently delete a video and everything derived from it (S3 blob, audio chunks, thumbnails, DB row).
 - **200** → `{ "deleted": true }`
-- **401** `{ "error": "Unauthorized" }` · **403** `{ "error": "Forbidden" }` · **404** `{ "error": "Not found" }`
+- **401** `{ "error": "Unauthorized" }` · **404** `{ "error": "Not found" }`
 
 ---
 
@@ -169,7 +152,6 @@ Permanently delete a video and everything derived from it (S3 blob, audio chunks
   title: string
   description: string
   blobUrl: string                 // S3 URL of the source video
-  userId: string
   createdAt: string               // ISO
   views: number
   thumbnailUrl: string | null     // first chapter thumbnail
@@ -178,8 +160,6 @@ Permanently delete a video and everything derived from it (S3 blob, audio chunks
   transcriptSegments: TranscriptSegment[] | null
   topicSegments: TopicSegment[] | null      // the chapters
   domainData: DomainData | null   // the Machine Guide (see below)
-  user: { id: string, name: string }
-  _count: { likes: number, comments: number }
 }
 ```
 
@@ -191,7 +171,6 @@ Arrays are abbreviated to one representative entry each; real responses can cont
   "title": "KRC Demo - Lube Pump 12.16.24",
   "description": "",
   "blobUrl": "https://video-testing.s3.ap-south-1.amazonaws.com/videos/1735900000-krc-lube-pump.mp4",
-  "userId": "cmossu05o0006kkcb",
   "createdAt": "2026-07-06T14:22:10.000Z",
   "views": 3,
   "thumbnailUrl": "https://video-testing.s3.ap-south-1.amazonaws.com/thumbnails/cmr4zvjav.../segment-13400.jpg",
@@ -245,9 +224,7 @@ Arrays are abbreviated to one representative entry each; real responses can cont
       { "term": "Float switch", "definition": "A sensor that rises and falls with the oil level and signals when it's too low." },
       { "term": "Jumper", "definition": "A short wire used to bypass a component to test whether it is the fault." }
     ]
-  },
-  "user": { "id": "cmossu05o0006kkcb", "name": "shanks" },
-  "_count": { "likes": 0, "comments": 0 }
+  }
 }
 ```
 
@@ -259,7 +236,6 @@ Before the pipeline finishes, the heavy fields are `null`. Poll until `transcrip
   "title": "New Upload",
   "description": "",
   "blobUrl": "https://video-testing.s3.ap-south-1.amazonaws.com/videos/1736330000-new.mp4",
-  "userId": "cmossu05o0006kkcb",
   "createdAt": "2026-07-08T09:00:00.000Z",
   "views": 0,
   "thumbnailUrl": null,
@@ -267,9 +243,7 @@ Before the pipeline finishes, the heavy fields are `null`. Poll until `transcrip
   "transcript": null,
   "transcriptSegments": null,
   "topicSegments": null,
-  "domainData": null,
-  "user": { "id": "cmossu05o0006kkcb", "name": "shanks" },
-  "_count": { "likes": 0, "comments": 0 }
+  "domainData": null
 }
 ```
 
@@ -342,6 +316,7 @@ Step = {
 `PENDING` → `PROCESSING` → `DONE` (or `FAILED`). Poll `GET /api/v1/videos/{id}/transcript` until terminal, then read the full result from `GET /api/v1/videos/{id}`.
 
 ## Notes for integrators
-- **Long jobs:** transcription of a 1–4hr video runs as a durable background workflow and can take many minutes to hours (it paces around the Groq rate limit). Poll, don't block.
-- **Auth gap:** `upload`/`transcribe`/`delete` need a user session today. For a headless service, add the API-key middleware (planned) or drive them with a service-account session cookie.
+- **Auth:** send `Authorization: Bearer <SERVICE_API_KEY>` on every `/api/v1/*` call. The key authenticates the whole calling service (there are no per-user identities). Rotate by updating `SERVICE_API_KEY` (comma-separated list supported).
+- **Uploads:** the `PUT` to `uploadUrl` goes straight to the object store (Azure Blob or S3) and does **not** carry the API key (the presigned URL is the credential). Send the same `Content-Type` you passed to `/upload`, plus every header returned in `uploadHeaders`.
+- **Long jobs:** transcription of a 1–4hr video runs as a durable background workflow and can take many minutes to hours (it paces around the transcription rate limit). Poll `/transcript`, don't block.
 - **Errors:** all error responses are `{ "error": "message" }` with the HTTP status codes listed per endpoint.

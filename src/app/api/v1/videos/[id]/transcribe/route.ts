@@ -1,24 +1,18 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { start } from "workflow/api";
 import { transcribeVideoWorkflow } from "@/workflows/transcribe-video";
 
-// The heavy lifting now runs in a durable Workflow (see src/workflows/transcribe-video.ts):
+// The heavy lifting runs in a durable Workflow (see src/workflows/transcribe-video.ts):
 // it survives the function timeout and paces around Groq's hourly quota. This route
-// just authorizes, marks the video PROCESSING, and kicks off the workflow.
+// marks the video PROCESSING and kicks off the workflow. Access is gated by the API
+// key (middleware) / same-origin UI — no user/ownership.
 export async function POST(_: Request, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   const video = await prisma.video.findUnique({
     where: { id: params.id },
-    select: { userId: true, transcriptStatus: true },
+    select: { transcriptStatus: true },
   });
   if (!video) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (video.userId !== session.user.id)
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   // Atomic claim: flip to PROCESSING only if the video isn't already running/done.
   // This is a single conditional UPDATE, so two concurrent POSTs (e.g. a React

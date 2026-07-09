@@ -11,7 +11,6 @@ const SELECT = {
   views: true,
   createdAt: true,
   thumbnailUrl: true,
-  user: { select: { name: true } },
 } as const
 
 const getVideos = unstable_cache(

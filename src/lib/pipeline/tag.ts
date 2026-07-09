@@ -1,17 +1,14 @@
 // GPT-4o-mini: derive the video's phases once, then tag each spoken segment
 // into one of those phases. Tagging needs the WHOLE transcript for consistent
 // phase vocabulary, so this runs after all segments are transcribed.
-import OpenAI from "openai";
+import { chatComplete } from "./openai";
 import { TAG_BATCH_SIZE, type RawSegment, type TaggedSegment } from "./types";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function analyzeVideo(
   sampleText: string,
 ): Promise<{ category: string; phases: string[] }> {
   try {
-    const res = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+    const res = await chatComplete({
       temperature: 0,
       response_format: { type: "json_object" },
       messages: [
@@ -24,7 +21,7 @@ Return JSON: { "category": "...", "phases": ["Phase1", "Phase2", ...] }`,
         },
         { role: "user", content: sampleText },
       ],
-    });
+    }, { mini: true });
     const parsed = JSON.parse(res.choices[0]?.message?.content ?? "{}");
     return {
       category: typeof parsed.category === "string" ? parsed.category : "General",
@@ -54,8 +51,7 @@ export async function tagSegments(
     batches.map(async (batch) => {
       const input = batch.map((s, i) => ({ i, t: s.text.slice(0, 200) }));
       try {
-        const completion = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
+        const completion = await chatComplete({
           temperature: 0,
           max_tokens: 1600,
           response_format: { type: "json_object" },
@@ -70,7 +66,7 @@ Return ONLY JSON — no input text: {"segments":[{"i":0,"m":"Introduction","s":"
             },
             { role: "user", content: JSON.stringify(input) },
           ],
-        });
+        }, { mini: true });
         const raw = completion.choices[0]?.message?.content ?? "{}";
         const parsed: { segments?: { i: number; m: string; s: string }[] } = JSON.parse(raw);
         const map = new Map(parsed.segments?.map((x) => [x.i, x]) ?? []);

@@ -12,17 +12,6 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-model User {
-  id        String    @id @default(cuid())
-  email     String    @unique
-  name      String
-  password  String
-  createdAt DateTime  @default(now())
-  videos    Video[]
-  likes     Like[]
-  comments  Comment[]
-}
-
 enum TranscriptStatus {
   NONE
   PENDING
@@ -31,17 +20,15 @@ enum TranscriptStatus {
   FAILED
 }
 
+// Internal-service build: no users, likes, or comments. A video is a standalone
+// record produced and consumed by the pipeline/API.
 model Video {
   id                 String           @id @default(cuid())
   title              String
   description        String           @default("")
   blobUrl            String
-  userId             String
-  user               User             @relation(fields: [userId], references: [id])
   createdAt          DateTime         @default(now())
   views              Int              @default(0)
-  likes              Like[]
-  comments           Comment[]
   transcriptStatus   TranscriptStatus @default(NONE)
   transcript         String?
   transcriptSegments Json?
@@ -52,25 +39,4 @@ model Video {
   // Structured machine-maintenance guide (intro, preventive maintenance, error
   // codes, troubleshooting FAQs, safety, tools/parts, specs) — see DomainData.
   domainData         Json?
-}
-
-model Like {
-  id        String   @id @default(cuid())
-  userId    String
-  videoId   String
-  user      User     @relation(fields: [userId], references: [id])
-  video     Video    @relation(fields: [videoId], references: [id])
-  createdAt DateTime @default(now())
-
-  @@unique([userId, videoId])
-}
-
-model Comment {
-  id        String   @id @default(cuid())
-  text      String
-  userId    String
-  videoId   String
-  user      User     @relation(fields: [userId], references: [id])
-  video     Video    @relation(fields: [videoId], references: [id])
-  createdAt DateTime @default(now())
 }

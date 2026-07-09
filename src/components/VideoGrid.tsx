@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import VideoCard from './VideoCard'
 import { Skeleton } from '@/components/ui/skeleton'
 
-type V = { id:string; title:string; blobUrl:string; thumbnailUrl?:string|null; views:number; createdAt:string|Date; user:{name:string} }
+type V = { id:string; title:string; blobUrl:string; thumbnailUrl?:string|null; views:number; createdAt:string|Date }
 
 export default function VideoGrid({ initialItems, initialCursor }: { initialItems: V[]; initialCursor: string|null }) {
   const [items, setItems] = useState<V[]>(initialItems)

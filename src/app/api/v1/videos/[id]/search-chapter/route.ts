@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import OpenAI from 'openai'
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+import { chatComplete } from '@/lib/pipeline/openai'
 
 type TopicSegment = {
   mainTag: string
@@ -42,8 +40,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   })
 
   try {
-    const res = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+    const res = await chatComplete({
       temperature: 0,
       response_format: { type: 'json_object' },
       max_tokens: 150,
@@ -63,7 +60,7 @@ ${chapters.map((c) => `[${c.index}] ${c.mainTag} / ${c.subTag}${c.text ? `: "${c
 Return JSON: {"relevant": <true|false>, "indices": [<matching chapter indices, empty array if none or not relevant>]}`,
         },
       ],
-    })
+    }, { mini: true })
 
     const parsed = JSON.parse(res.choices[0]?.message?.content ?? '{}')
 
