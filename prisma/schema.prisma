@@ -24,6 +24,8 @@ enum TranscriptStatus {
 // record produced and consumed by the pipeline/API.
 model Video {
   id                 String           @id @default(cuid())
+  // ID supplied by the ingesting service. Our cuid stays the primary key.
+  externalId         String?          @unique
   title              String
   description        String           @default("")
   blobUrl            String
