@@ -20,6 +20,7 @@ export const STORAGE_BACKEND = USE_AZURE ? 'azure' : 's3'
 
 export const s3Url = backend.s3Url
 export const s3Key = backend.s3Key
+export const exists = backend.exists
 export const getPresignedUploadUrl = backend.getPresignedUploadUrl
 export const getPresignedDownloadUrl = backend.getPresignedDownloadUrl
 export const downloadFromS3 = backend.downloadFromS3

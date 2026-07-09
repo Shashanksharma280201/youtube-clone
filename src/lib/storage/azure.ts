@@ -117,9 +117,14 @@ async function deleteS3Prefix(prefix: string): Promise<void> {
   }
 }
 
+async function exists(key: string): Promise<boolean> {
+  return blob(key).exists()
+}
+
 export const azureBackend: StorageBackend = {
   s3Url,
   s3Key,
+  exists,
   getPresignedUploadUrl,
   getPresignedDownloadUrl,
   downloadFromS3,

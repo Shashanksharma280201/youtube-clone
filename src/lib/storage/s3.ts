@@ -7,6 +7,7 @@ import {
   DeleteObjectCommand,
   DeleteObjectsCommand,
   ListObjectsV2Command,
+  HeadObjectCommand,
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { createWriteStream, existsSync } from 'fs'
@@ -107,9 +108,23 @@ async function deleteS3Prefix(prefix: string): Promise<void> {
   } while (ContinuationToken)
 }
 
+async function exists(key: string): Promise<boolean> {
+  try {
+    await client().send(new HeadObjectCommand({ Bucket: BUCKET(), Key: key }))
+    return true
+  } catch (err) {
+    const e = err as { name?: string; $metadata?: { httpStatusCode?: number } }
+    if (e.$metadata?.httpStatusCode === 404 || e.name === 'NotFound' || e.name === 'NoSuchKey') {
+      return false
+    }
+    throw err
+  }
+}
+
 export const s3Backend: StorageBackend = {
   s3Url,
   s3Key,
+  exists,
   getPresignedUploadUrl,
   getPresignedDownloadUrl,
   downloadFromS3,
