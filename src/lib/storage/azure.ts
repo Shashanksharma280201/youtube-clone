@@ -41,6 +41,18 @@ function blob(key: string): BlockBlobClient {
   return container().getBlockBlobClient(key)
 }
 
+// Container client for an arbitrary container. The default reuses the singleton;
+// a named container (e.g. a tenant's) builds a fresh client on demand.
+function containerClientFor(name?: string): ContainerClient {
+  if (!name || name === CONTAINER()) return container()
+  const service = new BlobServiceClient(ENDPOINT(), cred())
+  return service.getContainerClient(name)
+}
+
+function blobFor(key: string, name?: string): BlockBlobClient {
+  return containerClientFor(name).getBlockBlobClient(key)
+}
+
 function s3Url(key: string): string {
   return `${ENDPOINT()}/${CONTAINER()}/${key}`
 }
@@ -50,11 +62,13 @@ function s3Key(url: string): string {
 }
 
 // Build a time-limited SAS URL for a single blob with the given permissions.
-function sasUrl(key: string, perms: string, expiresIn: number): string {
+// `name` targets a non-default container; defaults to the configured one.
+function sasUrl(key: string, perms: string, expiresIn: number, name?: string): string {
+  const c = name || CONTAINER()
   const now = Date.now()
   const sas = generateBlobSASQueryParameters(
     {
-      containerName: CONTAINER(),
+      containerName: c,
       blobName: key,
       permissions: BlobSASPermissions.parse(perms),
       // small backdate absorbs clock skew between us and Azure
@@ -64,7 +78,7 @@ function sasUrl(key: string, perms: string, expiresIn: number): string {
     },
     cred(),
   ).toString()
-  return `${s3Url(key)}?${sas}`
+  return `${ENDPOINT()}/${c}/${key}?${sas}`
 }
 
 async function getPresignedUploadUrl(key: string, _contentType: string): Promise<UploadTarget> {
@@ -74,12 +88,12 @@ async function getPresignedUploadUrl(key: string, _contentType: string): Promise
   return { url, headers: { 'x-ms-blob-type': 'BlockBlob' } }
 }
 
-async function getPresignedDownloadUrl(key: string, expiresIn = 6 * 3600): Promise<string> {
-  return sasUrl(key, 'r', expiresIn)
+async function getPresignedDownloadUrl(key: string, expiresIn = 6 * 3600, container?: string): Promise<string> {
+  return sasUrl(key, 'r', expiresIn, container)
 }
 
-async function downloadFromS3(key: string, localPath: string): Promise<void> {
-  await blob(key).downloadToFile(localPath)
+async function downloadFromS3(key: string, localPath: string, container?: string): Promise<void> {
+  await blobFor(key, container).downloadToFile(localPath)
 }
 
 // Download the video to a stable local path once and reuse it across steps.
@@ -117,8 +131,8 @@ async function deleteS3Prefix(prefix: string): Promise<void> {
   }
 }
 
-async function exists(key: string): Promise<boolean> {
-  return blob(key).exists()
+async function exists(key: string, container?: string): Promise<boolean> {
+  return blobFor(key, container).exists()
 }
 
 export const azureBackend: StorageBackend = {

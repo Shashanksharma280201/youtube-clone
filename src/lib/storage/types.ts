@@ -14,10 +14,11 @@ export interface StorageBackend {
   // Inverse of s3Url — extract the object key from a stored blobUrl.
   s3Key(url: string): string
   // True when the object is present. Used to validate an ingest request.
-  exists(key: string): Promise<boolean>
+  // `container` reads from a non-default container/bucket (e.g. a tenant's).
+  exists(key: string, container?: string): Promise<boolean>
   getPresignedUploadUrl(key: string, contentType: string): Promise<UploadTarget>
-  getPresignedDownloadUrl(key: string, expiresIn?: number): Promise<string>
-  downloadFromS3(key: string, localPath: string): Promise<void>
+  getPresignedDownloadUrl(key: string, expiresIn?: number, container?: string): Promise<string>
+  downloadFromS3(key: string, localPath: string, container?: string): Promise<void>
   ensureLocalVideo(videoId: string, key: string): Promise<string>
   uploadToS3(localPath: string, key: string, contentType: string): Promise<string>
   deleteFromS3(key: string): Promise<void>

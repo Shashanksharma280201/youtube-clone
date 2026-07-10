@@ -33,6 +33,8 @@ function client(): S3Client {
 }
 
 const BUCKET = () => process.env.AWS_S3_BUCKET!
+// A non-default container maps to a different bucket; omitted means the default.
+const bucketOf = (container?: string) => container || BUCKET()
 
 function s3Url(key: string): string {
   return `https://${BUCKET()}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`
@@ -49,13 +51,13 @@ async function getPresignedUploadUrl(key: string, contentType: string): Promise<
   return { url, headers: {} }
 }
 
-async function getPresignedDownloadUrl(key: string, expiresIn = 6 * 3600): Promise<string> {
-  const cmd = new GetObjectCommand({ Bucket: BUCKET(), Key: key })
+async function getPresignedDownloadUrl(key: string, expiresIn = 6 * 3600, container?: string): Promise<string> {
+  const cmd = new GetObjectCommand({ Bucket: bucketOf(container), Key: key })
   return getSignedUrl(client(), cmd, { expiresIn })
 }
 
-async function downloadFromS3(key: string, localPath: string): Promise<void> {
-  const res = await client().send(new GetObjectCommand({ Bucket: BUCKET(), Key: key }))
+async function downloadFromS3(key: string, localPath: string, container?: string): Promise<void> {
+  const res = await client().send(new GetObjectCommand({ Bucket: bucketOf(container), Key: key }))
   const chunks: Uint8Array[] = []
   for await (const chunk of res.Body as AsyncIterable<Uint8Array>) chunks.push(chunk)
   const { writeFile } = await import('fs/promises')
@@ -108,9 +110,9 @@ async function deleteS3Prefix(prefix: string): Promise<void> {
   } while (ContinuationToken)
 }
 
-async function exists(key: string): Promise<boolean> {
+async function exists(key: string, container?: string): Promise<boolean> {
   try {
-    await client().send(new HeadObjectCommand({ Bucket: BUCKET(), Key: key }))
+    await client().send(new HeadObjectCommand({ Bucket: bucketOf(container), Key: key }))
     return true
   } catch (err) {
     const e = err as { name?: string; $metadata?: { httpStatusCode?: number } }
