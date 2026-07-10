@@ -70,24 +70,150 @@ Liveness/readiness probe (not gated).
 ---
 
 ### POST `/api/v1/videoExtraction` **[key]**
-Ingest a video by its storage URL and, once processed, return its chunks. Poll-based:
-call with the same body until it returns `200`.
-- **Request**
-  ```json
-  { "machineId": "string (required)", "resourceId": "string (required, your ID)",
-    "tenantId": "string (required)",
-    "videoURL": "https://<account>.blob.core.windows.net/<container>/<key> (required)" }
-  ```
-- **202** (processing) → `{ resourceId, machineId, tenantId, status: "PROCESSING", chunks: [], chunkCount: 0 }`
-- **200** (done) → `{ resourceId, machineId, tenantId, status: "DONE", title, description, createdAt, chunks: [...], chunkCount }`
-- **409** (failed) → `{ resourceId, status: "FAILED", error }`
-- **400** missing field, or `videoURL` host is not the configured storage account
-- **404** blob not found in that container
-- **401** missing/invalid key
-- Each chunk: `chunkId, start, end, mainTag, subTag, transcript, summarizedText, tools, thumbnailUrl (signed ~6h), blobUrl (signed ~6h), videoSummary, domainMetaData`.
-- `videoSummary` and `domainMetaData` are video-level and repeated in every chunk.
-- `videoURL` may point at any container in the configured storage account; other hosts are rejected (`400`).
-- Idempotent on `resourceId` (stored as `externalId`): repeat calls never create a duplicate or reprocess.
+
+The main "invoke" endpoint. Give it a video that already sits in storage and, once
+processed, it returns the whole video broken into chunks (chapters) — each with its
+transcript, a one-line summary, the tools mentioned, a signed thumbnail, and the
+machine guide.
+
+**It is poll-based.** Processing a video takes minutes (transcription, chapter
+tagging, on-screen vision, guide generation), far longer than one HTTP request can
+stay open. So you call this endpoint with the **same body** repeatedly:
+
+- the **first** call starts the pipeline and returns `202` with `status: "PROCESSING"` and empty `chunks`
+- **subsequent** calls return `202` while it is still processing
+- once finished, it returns `200` with `status: "DONE"` and the full result
+- it is **idempotent** on `resourceId`: repeat calls never create a duplicate or reprocess
+
+#### Request body
+
+```json
+{
+  "machineId": "haas-01",
+  "resourceId": "your-unique-id-123",
+  "tenantId": "tenant-abc",
+  "videoURL": "https://stdatadevcentralindia.blob.core.windows.net/videosvc/videos/solenoid.mp4"
+}
+```
+
+All four fields are required. `videoURL` may point at **any container** in the
+configured storage account (e.g. a tenant's own container); a URL for any other
+host is rejected with `400`.
+
+#### Example flow
+
+```bash
+BASE=https://video.dev.cin.ambypro.ai
+BODY='{"machineId":"haas-01","resourceId":"vx-123","tenantId":"tenant-abc","videoURL":"https://stdatadevcentralindia.blob.core.windows.net/videosvc/videos/solenoid.mp4"}'
+
+# 1. Start it (and keep calling the same command to poll)
+curl -s -X POST "$BASE/api/v1/videoExtraction" \
+  -H 'Authorization: Bearer <SERVICE_API_KEY>' \
+  -H 'Content-Type: application/json' -d "$BODY"
+```
+
+While processing (`HTTP 202`):
+
+```json
+{ "resourceId": "vx-123", "machineId": "haas-01", "tenantId": "tenant-abc",
+  "status": "PROCESSING", "chunks": [], "chunkCount": 0 }
+```
+
+Once done (`HTTP 200`) — abridged to two chunks; a real 14-min video returns ~40:
+
+```json
+{
+  "resourceId": "vx-123",
+  "machineId": "haas-01",
+  "tenantId": "tenant-abc",
+  "status": "DONE",
+  "title": "1783714861291-solenoid.mp4",
+  "description": "",
+  "createdAt": "2026-07-10T20:45:44.896Z",
+  "chunks": [
+    {
+      "chunkId": "cmrfdvd3d0001zhyvgx9jomda-0",
+      "start": 0,
+      "end": 42.88,
+      "mainTag": "introduction",
+      "subTag": "Overview of pneumatic system issues",
+      "transcript": "So one of the most common failures we see on the pneumatic system is ...",
+      "summarizedText": "The introduction explains why the pneumatic system and its solenoids are a common failure point.",
+      "tools": [],
+      "thumbnailUrl": "https://stdatadevcentralindia.blob.core.windows.net/videosvc/thumbnails/cmrfdvd3d0001zhyvgx9jomda/segment-0.jpg?sv=...&sig=...",
+      "blobUrl": "https://stdatadevcentralindia.blob.core.windows.net/videosvc/videos/solenoid.mp4?sv=...&sig=...",
+      "videoSummary": "This video addresses common issues with the pneumatic system in Haas machines, focusing on solenoid valve problems.",
+      "domainMetaData": {
+        "machine": "Haas machine pneumatic system",
+        "summary": "This video addresses common issues with the pneumatic system in Haas machines, focusing on solenoid valve problems.",
+        "overview": "The pneumatic system uses compressed air to power devices on the machine. Solenoids control the airflow and need a clean, dry air source to work reliably.",
+        "machineIntro": [
+          { "title": "Pneumatic System",
+            "detail": "Uses compressed air to power devices; solenoids control the flow and need clean air.",
+            "steps": [], "start": 21 }
+        ]
+      }
+    },
+    {
+      "chunkId": "cmrfdvd3d0001zhyvgx9jomda-3",
+      "start": 49.6,
+      "end": 98.04,
+      "mainTag": "air supply check",
+      "subTag": "Checking supply pressure",
+      "transcript": "The first thing you want to confirm is that you actually have adequate air pressure ...",
+      "summarizedText": "The speaker checks that the machine has adequate air pressure during the tool change.",
+      "tools": ["pressure gauge"],
+      "thumbnailUrl": "https://stdatadevcentralindia.blob.core.windows.net/videosvc/thumbnails/cmrfdvd3d0001zhyvgx9jomda/segment-3.jpg?sv=...&sig=...",
+      "blobUrl": "https://stdatadevcentralindia.blob.core.windows.net/videosvc/videos/solenoid.mp4?sv=...&sig=...",
+      "videoSummary": "This video addresses common issues with the pneumatic system in Haas machines, focusing on solenoid valve problems.",
+      "domainMetaData": {
+        "machine": "Haas machine pneumatic system",
+        "summary": "This video addresses common issues with the pneumatic system in Haas machines, focusing on solenoid valve problems.",
+        "overview": "The pneumatic system uses compressed air to power devices on the machine. Solenoids control the airflow and need a clean, dry air source to work reliably.",
+        "machineIntro": [
+          { "title": "Pneumatic System",
+            "detail": "Uses compressed air to power devices; solenoids control the flow and need clean air.",
+            "steps": [], "start": 21 }
+        ]
+      }
+    }
+  ],
+  "chunkCount": 40
+}
+```
+
+#### Chunk fields
+
+| Field | Meaning |
+|---|---|
+| `chunkId` | `<internal video id>-<chunk index>`, unique per chunk |
+| `start` / `end` | chunk boundaries in seconds |
+| `mainTag` | the phase (e.g. `introduction`, `diagnosis`, `air supply check`) |
+| `subTag` | a 2-5 word specific label |
+| `transcript` | the spoken words in this chunk |
+| `summarizedText` | one plain sentence describing what happens in the chunk |
+| `tools` | physical tools/instruments named in the chunk (may be empty) |
+| `thumbnailUrl` | signed URL to a chapter thumbnail, valid ~6h (`null` if none) |
+| `blobUrl` | signed URL to the source video, valid ~6h |
+| `videoSummary` | video-level summary (repeated in every chunk) |
+| `domainMetaData` | video-level machine guide: `machine`, `summary`, `overview`, `machineIntro[]` (repeated in every chunk) |
+
+#### Status codes
+
+| Code | Meaning |
+|---|---|
+| `202` | Accepted / still processing — keep polling |
+| `200` | Done — full body above |
+| `409` | Processing failed → `{ resourceId, status: "FAILED", error }` |
+| `400` | A required field is missing, or `videoURL`'s host is not the configured storage account |
+| `404` | The blob does not exist in that container |
+| `401` | Missing/invalid API key |
+
+#### Notes
+
+- `videoSummary` and `domainMetaData` are video-level and, as in the caller's spec, repeated inside every chunk.
+- `machineId`, `tenantId` (echoed from the request) and `status` are present on every response, in addition to the fields above.
+- `thumbnailUrl` and `blobUrl` are short-lived signed URLs — fetch or copy them promptly (the storage container is private, so unsigned URLs are rejected).
 
 ---
 
