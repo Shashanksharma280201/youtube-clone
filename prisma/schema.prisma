@@ -26,6 +26,9 @@ model Video {
   id                 String           @id @default(cuid())
   // ID supplied by the ingesting service. Our cuid stays the primary key.
   externalId         String?          @unique
+  // Machine + tenant this video belongs to (from videoExtraction). Stored + echoed.
+  machineId          String?
+  tenantId           String?
   title              String
   description        String           @default("")
   blobUrl            String
