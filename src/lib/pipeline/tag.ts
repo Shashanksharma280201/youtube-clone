@@ -1,6 +1,7 @@
 // GPT-4o-mini: derive the video's phases once, then tag each spoken segment
 // into one of those phases. Tagging needs the WHOLE transcript for consistent
 // phase vocabulary, so this runs after all segments are transcribed.
+import { mergeOrphanOther } from "./mergeOther";
 import { chatComplete } from "./openai";
 import { TAG_BATCH_SIZE, type RawSegment, type TaggedSegment } from "./types";
 
@@ -59,10 +60,10 @@ export async function tagSegments(
             {
               role: "system",
               content: `Tag each transcript segment with:
-- "m": ONE single-word phase label (main tag)
+- "m": the phase, chosen ONLY from this list: introduction, overview, diagnosis, repair, testing, verification, safety, parts, conclusion, other. Use "other" ONLY when none of the others fit.
 - "s": 2-5 word specific description (sub tag)
 ${phaseHint}
-Return ONLY JSON — no input text: {"segments":[{"i":0,"m":"Introduction","s":"Overview of the parts"},{"i":1,"m":"Diagnosis","s":"Testing battery voltage"},...]}`,
+Return ONLY JSON — no input text: {"segments":[{"i":0,"m":"introduction","s":"Overview of the parts"},{"i":1,"m":"diagnosis","s":"Testing battery voltage"}]}`,
             },
             { role: "user", content: JSON.stringify(input) },
           ],
@@ -74,16 +75,18 @@ Return ONLY JSON — no input text: {"segments":[{"i":0,"m":"Introduction","s":"
           mainTag: (map.get(j)?.m ?? "Other").toLowerCase().trim(),
           subTag: (map.get(j)?.s ?? "").trim(),
         }));
-      } catch {
+      } catch (err) {
+        console.warn(`[tag] batch of ${batch.length} failed -> 'other':`, err);
         return batch.map(() => ({ mainTag: "other", subTag: "" }));
       }
     }),
   );
 
   const allTags = batchResults.flat();
-  return segments.map((seg, i) => ({
+  const tagged = segments.map((seg, i) => ({
     ...seg,
     mainTag: allTags[i]?.mainTag ?? "other",
     subTag: allTags[i]?.subTag ?? "",
   }));
+  return mergeOrphanOther(tagged);
 }
