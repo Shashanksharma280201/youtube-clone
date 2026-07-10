@@ -13,7 +13,8 @@
 // so moving off Vercel later means swapping this one file, not the pipeline.
 import { FatalError, RetryableError } from "workflow";
 import { prisma } from "@/lib/prisma";
-import { s3Key, getPresignedDownloadUrl } from "@/lib/s3";
+import { getPresignedDownloadUrl } from "@/lib/s3";
+import { parseStorageUrl } from "@/lib/storage/parseUrl";
 import { probeDuration, extractAudioSlice, detectSilentWindows } from "@/lib/pipeline/media";
 import { transcribeAudioFile, isHallucination, RateLimitedError } from "@/lib/pipeline/transcribe";
 import { findUnspokenGaps, chunkLongGaps } from "@/lib/pipeline/gaps";
@@ -60,13 +61,15 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, i: number
 // and slice the timeline into fixed-length segments for the transcribe fan-out.
 async function prepareStep(
   videoId: string,
-): Promise<{ key: string; duration: number; segments: AudioSegment[] }> {
+): Promise<{ key: string; container: string; duration: number; segments: AudioSegment[] }> {
   "use step";
   const video = await prisma.video.findUnique({ where: { id: videoId } });
   if (!video) throw new FatalError("Video not found");
 
-  const key = s3Key(video.blobUrl);
-  const url = await getPresignedDownloadUrl(key);
+  // The video may live in any container in our account (e.g. a tenant's), so
+  // parse both container and key from its stored URL and read from there.
+  const { container, key } = parseStorageUrl(video.blobUrl);
+  const url = await getPresignedDownloadUrl(key, undefined, container);
   const duration = await probeDuration(url);
   const total = Math.max(duration, 1);
 
@@ -74,7 +77,7 @@ async function prepareStep(
   for (let t = 0; t < total; t += SEGMENT_SECS) {
     segments.push({ offset: t, dur: Math.min(SEGMENT_SECS, total - t) || SEGMENT_SECS });
   }
-  return { key, duration, segments };
+  return { key, container, duration, segments };
 }
 
 // Transcribe ONE segment: ffmpeg rips just this ~10-min audio slice straight from
@@ -84,11 +87,12 @@ async function prepareStep(
 async function transcribeChunkStep(
   videoId: string,
   key: string,
+  container: string,
   offset: number,
   dur: number,
 ): Promise<ChunkResult> {
   "use step";
-  const url = await getPresignedDownloadUrl(key);
+  const url = await getPresignedDownloadUrl(key, undefined, container);
   const local = join(tmpdir(), `tchunk-${videoId}-${Math.round(offset)}.mp3`);
   try {
     await extractAudioSlice(url, offset, dur, local);
@@ -148,13 +152,14 @@ async function tagStep(videoId: string, spokenRaw: RawSegment[], duration: numbe
 async function framesStep(
   videoId: string,
   key: string,
+  container: string,
   windows: { start: number; end: number }[],
   spokenSegments: TaggedSegment[],
   duration: number,
 ): Promise<{ transcript: string; transcriptSegments: TaggedSegment[]; topicSegments: VideoSegment[] }> {
   "use step";
-  // ffmpeg seeks each frame straight from S3 — no full-video download.
-  const url = await getPresignedDownloadUrl(key);
+  // ffmpeg seeks each frame straight from storage — no full-video download.
+  const url = await getPresignedDownloadUrl(key, undefined, container);
 
   // Decide which stretches to describe with Vision.
   let chunks: { start: number; end: number }[];
@@ -218,10 +223,10 @@ async function domainStep(
 
 // Add "where is it on screen" notes to each fix step: grab the video frame at
 // the step's timestamp and describe the component's location with Vision.
-async function enrichGuideStep(videoId: string, key: string, domain: DomainData): Promise<DomainData> {
+async function enrichGuideStep(videoId: string, key: string, container: string, domain: DomainData): Promise<DomainData> {
   "use step";
   try {
-    const url = await getPresignedDownloadUrl(key);
+    const url = await getPresignedDownloadUrl(key, undefined, container);
     const steps = [
       ...domain.troubleshooting.flatMap((d) => d.fix),
       ...domain.errorCodes.flatMap((d) => d.fix),
@@ -270,25 +275,25 @@ async function failStep(videoId: string, message: string): Promise<void> {
 export async function transcribeVideoWorkflow(videoId: string): Promise<{ status: string }> {
   "use workflow";
   try {
-    const { key, duration, segments } = await prepareStep(videoId);
+    const { key, container, duration, segments } = await prepareStep(videoId);
 
     // Transcribe the segments with bounded concurrency — each step rips its own
-    // audio slice from S3, so no full download and no per-chunk S3 round-trip.
+    // audio slice from storage, so no full download and no per-chunk round-trip.
     const perChunk = await mapLimit(segments, TRANSCRIBE_CONCURRENCY, (s) =>
-      transcribeChunkStep(videoId, key, s.offset, s.dur),
+      transcribeChunkStep(videoId, key, container, s.offset, s.dur),
     );
     const allSpokenRaw = perChunk.flatMap((p) => p.spoken);
     const allWindows = perChunk.flatMap((p) => p.silentWindows);
 
     const spokenSegments = await tagStep(videoId, allSpokenRaw, duration);
     const { transcript, transcriptSegments, topicSegments } = await framesStep(
-      videoId, key, allWindows, spokenSegments, duration,
+      videoId, key, container, allWindows, spokenSegments, duration,
     );
 
     // Machine-maintenance guide extraction (runs off the transcript + chapters),
     // then enrich each fix step with an on-screen "where is it" note via Vision.
     const domainData = await domainStep(transcriptSegments, topicSegments, duration);
-    const enriched = await enrichGuideStep(videoId, key, domainData);
+    const enriched = await enrichGuideStep(videoId, key, container, domainData);
 
     await saveStep(videoId, transcript, transcriptSegments, topicSegments, enriched);
     return { status: "DONE" };
