@@ -130,6 +130,33 @@ same shape as the existing tagging call, one extra field each.
 A chunk with no speech gets `summarizedText: ""` and `tools: []`. A failed call degrades to those
 defaults rather than failing the video — the guide and chapters are still worth having.
 
+### 4b. Tagging quality — reduce "other"
+
+Today `src/lib/pipeline/tag.ts` produces too many `other` chapters. There are two distinct causes,
+and they are currently indistinguishable:
+
+- The prompt lets the model return **any** single word for `m`, so it reaches for `other` on filler
+  and tangents rather than a real phase.
+- On a parse or API failure, the whole batch falls back to `mainTag: "other"` (line ~78), and a
+  missing segment defaults to `"Other"` (line ~74). So a run of `other` may be a **failed batch**, not
+  real content — and nothing records which.
+
+Three changes:
+
+1. **Constrain the label set.** The prompt offers a fixed list of phases and says `other` is a last
+   resort: `introduction`, `overview`, `diagnosis`, `repair`, `testing`, `verification`, `safety`,
+   `parts`, `conclusion`, `other`. The model must pick from these. (The existing `phaseHint` for
+   maintenance videos stays.)
+2. **Distinguish failure from genuine `other`.** When a batch throws, `log()`/`console.warn` the batch
+   index and segment range, so a wall of `other` is traceable to a failed call rather than looking
+   like real content. The fallback value stays `other` (the shape must not change), but it is now
+   observable.
+3. **Merge orphan `other` segments.** After tagging, a lone `other` segment shorter than a threshold
+   (e.g. < 8s) that sits between two segments of the same non-`other` tag is absorbed into them, so it
+   does not surface as its own chapter. Runs of genuine `other` are left alone.
+
+This is scoped to the tagger and the chapter-grouping step; it does not change any API shape.
+
 ### 5. Chunk serialization
 
 One chunk per `topicSegment`, in order:
