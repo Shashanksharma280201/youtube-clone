@@ -18,6 +18,10 @@ export type VideoSegment = {
   start: number;
   end: number;
   thumbnailPath: string | null;
+  // Per-chunk enrichment (videoExtraction): a one-line summary and the tools
+  // named in this chunk. Optional so older records without them still type.
+  summarizedText?: string;
+  tools?: string[];
 };
 
 export type SilentWindow = { start: number; end: number | null };

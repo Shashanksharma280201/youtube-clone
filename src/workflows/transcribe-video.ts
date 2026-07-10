@@ -15,6 +15,7 @@ import { FatalError, RetryableError } from "workflow";
 import { prisma } from "@/lib/prisma";
 import { getPresignedDownloadUrl } from "@/lib/s3";
 import { parseStorageUrl } from "@/lib/storage/parseUrl";
+import { summarizeChunks } from "@/lib/pipeline/chunkSummary";
 import { probeDuration, extractAudioSlice, detectSilentWindows } from "@/lib/pipeline/media";
 import { transcribeAudioFile, isHallucination, RateLimitedError } from "@/lib/pipeline/transcribe";
 import { findUnspokenGaps, chunkLongGaps } from "@/lib/pipeline/gaps";
@@ -239,6 +240,30 @@ async function enrichGuideStep(videoId: string, key: string, container: string, 
   return domain;
 }
 
+// Enrich each chapter with a one-line summary + the tools named in it, sliced
+// from the transcript. Rides along in the topicSegments JSON — no schema change.
+async function summarizeStep(
+  topicSegments: VideoSegment[],
+  transcriptSegments: TaggedSegment[],
+): Promise<VideoSegment[]> {
+  "use step";
+  if (topicSegments.length === 0) return topicSegments;
+  const inputs = topicSegments.map((seg) => ({
+    mainTag: seg.mainTag,
+    subTag: seg.subTag,
+    transcript: transcriptSegments
+      .filter((t) => t.start >= seg.start && t.start < seg.end)
+      .map((t) => t.text.trim())
+      .join(" "),
+  }));
+  const summaries = await summarizeChunks(inputs);
+  return topicSegments.map((seg, i) => ({
+    ...seg,
+    summarizedText: summaries[i]?.summarizedText ?? "",
+    tools: summaries[i]?.tools ?? [],
+  }));
+}
+
 async function saveStep(
   videoId: string,
   transcript: string,
@@ -290,12 +315,15 @@ export async function transcribeVideoWorkflow(videoId: string): Promise<{ status
       videoId, key, container, allWindows, spokenSegments, duration,
     );
 
+    // Add a one-line summary + per-chunk tools to each chapter.
+    const enrichedChunks = await summarizeStep(topicSegments, transcriptSegments);
+
     // Machine-maintenance guide extraction (runs off the transcript + chapters),
     // then enrich each fix step with an on-screen "where is it" note via Vision.
-    const domainData = await domainStep(transcriptSegments, topicSegments, duration);
+    const domainData = await domainStep(transcriptSegments, enrichedChunks, duration);
     const enriched = await enrichGuideStep(videoId, key, container, domainData);
 
-    await saveStep(videoId, transcript, transcriptSegments, topicSegments, enriched);
+    await saveStep(videoId, transcript, transcriptSegments, enrichedChunks, enriched);
     return { status: "DONE" };
   } catch (err) {
     const message = (err as Error)?.message ?? "An error occurred during transcription. Please try again.";
