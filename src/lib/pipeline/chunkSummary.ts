@@ -48,7 +48,7 @@ export async function summarizeChunks(chunks: ChunkInput[]): Promise<ChunkSummar
               {
                 role: "system",
                 content:
-                  'For each transcript chunk write "summary": one plain sentence describing what happens, and "tools": an array of the physical tools/instruments named in that chunk (empty if none). Do not invent tools. Return ONLY: {"chunks":[{"i":0,"summary":"...","tools":["..."]}]}',
+                  'For each transcript chunk write "summary": one plain sentence describing what happens, and "tools": an array of the physical tools/instruments named in that chunk (empty if none). Do not invent tools. Return ONLY this JSON object: {"chunks":[{"i":0,"summary":"...","tools":["..."]}]}',
               },
               { role: "user", content: JSON.stringify(input) },
             ],

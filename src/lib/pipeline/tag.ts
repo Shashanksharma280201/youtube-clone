@@ -41,8 +41,8 @@ export async function tagSegments(
 
   const phaseHint =
     phases.length > 0
-      ? `You MUST use ONLY one of these exact labels for "m": ${phases.join(", ")}. Never invent a new label — pick the closest match from the list.`
-      : 'Use a single-word label for "m" that best describes the phase.';
+      ? `Choose "m" for each segment from this list, picking the closest match: ${phases.join(", ")}, other. Use "other" ONLY when none genuinely fit — avoid it whenever a real phase applies.`
+      : `Choose "m" from: introduction, overview, diagnosis, repair, testing, verification, safety, parts, conclusion, other. Use "other" ONLY as a last resort.`;
 
   const batches: RawSegment[][] = [];
   for (let i = 0; i < segments.length; i += TAG_BATCH_SIZE)
@@ -60,7 +60,7 @@ export async function tagSegments(
             {
               role: "system",
               content: `Tag each transcript segment with:
-- "m": the phase, chosen ONLY from this list: introduction, overview, diagnosis, repair, testing, verification, safety, parts, conclusion, other. Use "other" ONLY when none of the others fit.
+- "m": the phase label (see the list below)
 - "s": 2-5 word specific description (sub tag)
 ${phaseHint}
 Return ONLY JSON — no input text: {"segments":[{"i":0,"m":"introduction","s":"Overview of the parts"},{"i":1,"m":"diagnosis","s":"Testing battery voltage"}]}`,
