@@ -69,6 +69,28 @@ Liveness/readiness probe (not gated).
 
 ---
 
+### POST `/api/v1/videoExtraction` **[key]**
+Ingest a video by its storage URL and, once processed, return its chunks. Poll-based:
+call with the same body until it returns `200`.
+- **Request**
+  ```json
+  { "machineId": "string (required)", "resourceId": "string (required, your ID)",
+    "tenantId": "string (required)",
+    "videoURL": "https://<account>.blob.core.windows.net/<container>/<key> (required)" }
+  ```
+- **202** (processing) → `{ resourceId, machineId, tenantId, status: "PROCESSING", chunks: [], chunkCount: 0 }`
+- **200** (done) → `{ resourceId, machineId, tenantId, status: "DONE", title, description, createdAt, chunks: [...], chunkCount }`
+- **409** (failed) → `{ resourceId, status: "FAILED", error }`
+- **400** missing field, or `videoURL` host is not the configured storage account
+- **404** blob not found in that container
+- **401** missing/invalid key
+- Each chunk: `chunkId, start, end, mainTag, subTag, transcript, summarizedText, tools, thumbnailUrl (signed ~6h), blobUrl (signed ~6h), videoSummary, domainMetaData`.
+- `videoSummary` and `domainMetaData` are video-level and repeated in every chunk.
+- `videoURL` may point at any container in the configured storage account; other hosts are rejected (`400`).
+- Idempotent on `resourceId` (stored as `externalId`): repeat calls never create a duplicate or reprocess.
+
+---
+
 ### POST `/api/v1/ingest` **[key]**
 Register a video that **already exists** in the storage container and start the pipeline.
 Use this when another service wrote the file directly to Azure Blob / S3 — no bytes pass through this service.
