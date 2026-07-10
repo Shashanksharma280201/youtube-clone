@@ -16,6 +16,7 @@ import { prisma } from "@/lib/prisma";
 import { getPresignedDownloadUrl } from "@/lib/s3";
 import { parseStorageUrl } from "@/lib/storage/parseUrl";
 import { summarizeChunks } from "@/lib/pipeline/chunkSummary";
+import { reassignOtherTags } from "@/lib/pipeline/reassignOther";
 import { probeDuration, extractAudioSlice, detectSilentWindows } from "@/lib/pipeline/media";
 import { transcribeAudioFile, isHallucination, RateLimitedError } from "@/lib/pipeline/transcribe";
 import { findUnspokenGaps, chunkLongGaps } from "@/lib/pipeline/gaps";
@@ -264,6 +265,14 @@ async function summarizeStep(
   }));
 }
 
+// Reassign "other" chapters to the best-fitting phase from the video's own
+// vocabulary, using the summaries produced above. Runs after summarizeStep so
+// each "other" chapter has a summary to classify from.
+async function reassignStep(topicSegments: VideoSegment[]): Promise<VideoSegment[]> {
+  "use step";
+  return reassignOtherTags(topicSegments);
+}
+
 async function saveStep(
   videoId: string,
   transcript: string,
@@ -317,13 +326,15 @@ export async function transcribeVideoWorkflow(videoId: string): Promise<{ status
 
     // Add a one-line summary + per-chunk tools to each chapter.
     const enrichedChunks = await summarizeStep(topicSegments, transcriptSegments);
+    // Rescue "other" chapters into a real phase using those summaries.
+    const reTagged = await reassignStep(enrichedChunks);
 
     // Machine-maintenance guide extraction (runs off the transcript + chapters),
     // then enrich each fix step with an on-screen "where is it" note via Vision.
-    const domainData = await domainStep(transcriptSegments, enrichedChunks, duration);
+    const domainData = await domainStep(transcriptSegments, reTagged, duration);
     const enriched = await enrichGuideStep(videoId, key, container, domainData);
 
-    await saveStep(videoId, transcript, transcriptSegments, enrichedChunks, enriched);
+    await saveStep(videoId, transcript, transcriptSegments, reTagged, enriched);
     return { status: "DONE" };
   } catch (err) {
     const message = (err as Error)?.message ?? "An error occurred during transcription. Please try again.";
