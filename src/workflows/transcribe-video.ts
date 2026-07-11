@@ -17,6 +17,7 @@ import { getPresignedDownloadUrl } from "@/lib/s3";
 import { parseStorageUrl } from "@/lib/storage/parseUrl";
 import { summarizeChunks } from "@/lib/pipeline/chunkSummary";
 import { reassignOtherTags } from "@/lib/pipeline/reassignOther";
+import { alignSegmentTags } from "@/lib/pipeline/alignSegmentTags";
 import { probeDuration, extractAudioSlice, detectSilentWindows } from "@/lib/pipeline/media";
 import { transcribeAudioFile, isHallucination, RateLimitedError } from "@/lib/pipeline/transcribe";
 import { findUnspokenGaps, chunkLongGaps } from "@/lib/pipeline/gaps";
@@ -328,13 +329,17 @@ export async function transcribeVideoWorkflow(videoId: string): Promise<{ status
     const enrichedChunks = await summarizeStep(topicSegments, transcriptSegments);
     // Rescue "other" chapters into a real phase using those summaries.
     const reTagged = await reassignStep(enrichedChunks);
+    // Chapters are the source of truth for the phase: give each transcript
+    // segment the phase of the chapter it sits in, so the transcript view and
+    // the chapter list agree (and "other" does not reappear in the transcript).
+    const alignedSegments = alignSegmentTags(transcriptSegments, reTagged);
 
     // Machine-maintenance guide extraction (runs off the transcript + chapters),
     // then enrich each fix step with an on-screen "where is it" note via Vision.
-    const domainData = await domainStep(transcriptSegments, reTagged, duration);
+    const domainData = await domainStep(alignedSegments, reTagged, duration);
     const enriched = await enrichGuideStep(videoId, key, container, domainData);
 
-    await saveStep(videoId, transcript, transcriptSegments, reTagged, enriched);
+    await saveStep(videoId, transcript, alignedSegments, reTagged, enriched);
     return { status: "DONE" };
   } catch (err) {
     const message = (err as Error)?.message ?? "An error occurred during transcription. Please try again.";
