@@ -1,5 +1,8 @@
 {
   "compilerOptions": {
+    // es2018+ is needed for Unicode property escapes (\p{L}) in regexes — used to
+    // keep non-Latin-script speech. Type-check only; Next/SWC handles the emit.
+    "target": "es2020",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,

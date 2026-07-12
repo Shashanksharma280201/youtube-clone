@@ -81,9 +81,13 @@ export async function transcribeAudioFile(filePath: string): Promise<WhisperSeg[
 }
 
 // Drop Whisper hallucinations (ambient noise, music, tool sounds reported as speech).
+//
+// The "real characters" test counts letters/digits in ANY script (\p{L}\p{N}), not
+// just a-zA-Z0-9. An ASCII-only test silently discarded every non-Latin-script
+// segment — Hindi, Arabic, Chinese — leaving those videos with an empty transcript.
 export function isHallucination(seg: RawSegment, totalDuration: number): boolean {
   if ((seg.no_speech_prob ?? 0) >= NO_SPEECH_PROB_THRESH) return true;
   if (seg.start >= totalDuration) return true;
-  if (seg.text.replace(/[^a-zA-Z0-9]/g, "").length < MIN_REAL_TEXT_CHARS) return true;
+  if (seg.text.replace(/[^\p{L}\p{N}]/gu, "").length < MIN_REAL_TEXT_CHARS) return true;
   return false;
 }
