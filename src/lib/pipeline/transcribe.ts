@@ -5,6 +5,7 @@ import OpenAI from "openai";
 import { readFile } from "fs/promises";
 import {
   NO_SPEECH_PROB_THRESH,
+  LOGPROB_THRESH,
   MIN_REAL_TEXT_CHARS,
   type RawSegment,
 } from "./types";
@@ -67,6 +68,7 @@ export async function transcribeAudioFile(filePath: string): Promise<WhisperSeg[
       end: s.end,
       text: s.text.trim(),
       no_speech_prob: s.no_speech_prob ?? 0,
+      avg_logprob: s.avg_logprob ?? 0,
     }));
   } catch (err) {
     const e = err as ApiError;
@@ -82,11 +84,23 @@ export async function transcribeAudioFile(filePath: string): Promise<WhisperSeg[
 
 // Drop Whisper hallucinations (ambient noise, music, tool sounds reported as speech).
 //
-// The "real characters" test counts letters/digits in ANY script (\p{L}\p{N}), not
-// just a-zA-Z0-9. An ASCII-only test silently discarded every non-Latin-script
-// segment — Hindi, Arabic, Chinese — leaving those videos with an empty transcript.
+// Two lessons are baked in here:
+//
+// 1. The "real characters" test counts letters/digits in ANY script (\p{L}\p{N}),
+//    not just a-zA-Z0-9. An ASCII-only test silently discarded every non-Latin
+//    segment — Hindi, Arabic, Chinese — leaving those videos with an empty transcript.
+//
+// 2. A high no_speech_prob ALONE does not mean silence. Whisper is routinely
+//    unsure whether non-English audio is speech (no_speech_prob ~0.9) while being
+//    perfectly confident in the text it produced (avg_logprob ~-0.4). Dropping on
+//    that signal alone discarded 31 of 35 real Hindi segments. So we require BOTH
+//    signals to be bad — Whisper's own reference implementation uses exactly this
+//    pair (no_speech_threshold + logprob_threshold). A true hallucination has a
+//    high no_speech_prob AND low text confidence.
 export function isHallucination(seg: RawSegment, totalDuration: number): boolean {
-  if ((seg.no_speech_prob ?? 0) >= NO_SPEECH_PROB_THRESH) return true;
+  const noSpeech = (seg.no_speech_prob ?? 0) >= NO_SPEECH_PROB_THRESH;
+  const lowConfidence = (seg.avg_logprob ?? 0) < LOGPROB_THRESH;
+  if (noSpeech && lowConfidence) return true;
   if (seg.start >= totalDuration) return true;
   if (seg.text.replace(/[^\p{L}\p{N}]/gu, "").length < MIN_REAL_TEXT_CHARS) return true;
   return false;

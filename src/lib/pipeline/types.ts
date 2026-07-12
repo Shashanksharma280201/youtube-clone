@@ -8,6 +8,9 @@ export type RawSegment = {
   end: number;
   text: string;
   no_speech_prob?: number;
+  // Whisper's confidence in the TEXT it produced. Used together with
+  // no_speech_prob to spot hallucinations — see isHallucination().
+  avg_logprob?: number;
 };
 
 export type TaggedSegment = RawSegment & { mainTag: string; subTag: string };
@@ -43,7 +46,10 @@ export const VISION_BATCH_SIZE = 5; // frames per GPT-4o Vision call
 export const VISION_CONCURRENCY = 3; // parallel Vision calls
 export const MAX_SILENT_CHUNKS = 60; // safety cap for very long silent videos
 export const FULL_SILENT_CHUNK_SECS = 25; // chunk size when whole video has no speech
-export const NO_SPEECH_PROB_THRESH = 0.6; // Whisper segments above this are hallucinations
+export const NO_SPEECH_PROB_THRESH = 0.6; // "probably not speech" per Whisper
+export const LOGPROB_THRESH = -1.0; // below this, Whisper is unsure of the TEXT it wrote.
+// A segment is only a hallucination when BOTH are bad. Whisper often reports a high
+// no_speech_prob for confident non-English speech, so neither signal is safe alone.
 export const MIN_REAL_TEXT_CHARS = 4; // fewer real characters than this = hallucination
 
 // ─── small helpers ────────────────────────────────────────────────────────────

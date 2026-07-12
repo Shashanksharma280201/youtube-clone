@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { isHallucination } from '@/lib/pipeline/transcribe'
 
-const seg = (text: string, no_speech_prob = 0, start = 0) =>
-  ({ id: 1, start, end: start + 2, text, no_speech_prob })
+const seg = (text: string, no_speech_prob = 0, start = 0, avg_logprob = 0) =>
+  ({ id: 1, start, end: start + 2, text, no_speech_prob, avg_logprob })
 
 const DURATION = 600
 
@@ -29,8 +29,21 @@ describe('isHallucination', () => {
     expect(isHallucination(seg('...'), DURATION)).toBe(true)
   })
 
-  it('still drops a segment above the no-speech threshold', () => {
-    expect(isHallucination(seg('Some words here', 0.9), DURATION)).toBe(true)
+  // Regression: real Hindi speech comes back with a HIGH no_speech_prob (~0.87)
+  // but a healthy avg_logprob (~-0.37). Dropping on no_speech_prob alone threw
+  // away 31 of 35 genuine segments. Both signals must be bad.
+  it('keeps confident speech even when no_speech_prob is high', () => {
+    expect(
+      isHallucination(seg('इस मेशीन में शुरू करने के लिए', 0.87, 0, -0.37), DURATION),
+    ).toBe(false)
+  })
+
+  it('drops a segment only when no_speech_prob is high AND text confidence is low', () => {
+    expect(isHallucination(seg('Some words here', 0.9, 0, -2.5), DURATION)).toBe(true)
+  })
+
+  it('keeps a low-confidence segment when whisper thinks it IS speech', () => {
+    expect(isHallucination(seg('Some words here', 0.1, 0, -2.5), DURATION)).toBe(false)
   })
 
   it('still drops a segment starting past the video duration', () => {
