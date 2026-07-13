@@ -54,7 +54,7 @@ export async function tagSegments(
       try {
         const completion = await chatComplete({
           temperature: 0,
-          max_tokens: 1600,
+          max_completion_tokens: 1600,
           response_format: { type: "json_object" },
           messages: [
             {

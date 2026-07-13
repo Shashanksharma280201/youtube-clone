@@ -43,7 +43,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const res = await chatComplete({
       temperature: 0,
       response_format: { type: 'json_object' },
-      max_tokens: 150,
+      max_completion_tokens: 150,
       messages: [
         {
           role: 'system',

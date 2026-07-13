@@ -50,7 +50,7 @@ export async function reassignOtherTags(segments: VideoSegment[]): Promise<Video
     const res = await chatComplete(
       {
         temperature: 0,
-        max_tokens: 800,
+        max_completion_tokens: 800,
         response_format: { type: "json_object" },
         messages: [
           {

@@ -64,7 +64,7 @@ export async function describeFramesBatch(framePaths: string[]): Promise<string[
     try {
       if (batch.length === 1) {
         const res = await chatComplete({
-          max_tokens: 120,
+          max_completion_tokens: 120,
           messages: [
             {
               role: "user",
@@ -84,7 +84,7 @@ export async function describeFramesBatch(framePaths: string[]): Promise<string[
       } else {
         // json_object mode guarantees parseable JSON — no markdown fences to trip on.
         const res = await chatComplete({
-          max_tokens: 500,
+          max_completion_tokens: 500,
           response_format: { type: "json_object" },
           messages: [
             {
@@ -170,7 +170,7 @@ async function locateComponent(framePath: string, stepText: string): Promise<str
   const bytes = await readFile(framePath);
   try {
     const res = await chatComplete({
-      max_tokens: 70,
+      max_completion_tokens: 70,
       messages: [
         {
           role: "user",

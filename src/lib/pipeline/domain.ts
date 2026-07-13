@@ -63,7 +63,7 @@ async function runPass(user: string): Promise<Record<string, unknown>> {
   const res = await chatComplete({
     temperature: 0,
     response_format: { type: "json_object" },
-    max_tokens: 16000, // rich debug flows + glossary need lots of room
+    max_completion_tokens: 16000, // rich debug flows + glossary need lots of room
     messages: [
       { role: "system", content: SYSTEM },
       { role: "user", content: user },

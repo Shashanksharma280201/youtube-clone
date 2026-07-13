@@ -6,6 +6,15 @@
 //   OPENAI_MODEL_MINI  (cheaper,  default gpt-4o-mini) — used for tagging + search
 // If the configured model isn't available to the key, calls auto-fall back to
 // gpt-4o / gpt-4o-mini so the pipeline keeps working.
+//
+// NOTE on token limits: every call sends `max_completion_tokens`, never
+// `max_tokens`. GPT-5 models REJECT max_tokens outright; gpt-4o accepts both. One
+// parameter therefore works for every model, with no branching.
+//
+// The fallback is a safety net, but it is also a trap when comparing models: a key
+// without access to the configured model silently produces gpt-4o output that looks
+// like success. `activeModels()` is exposed on /api/health, and a fallback logs a
+// warning, so you can always prove which model actually ran.
 import OpenAI from "openai";
 import type { ChatCompletionCreateParamsNonStreaming } from "openai/resources/chat/completions";
 
@@ -15,6 +24,12 @@ const MODEL = process.env.OPENAI_MODEL || "gpt-4o";
 const MODEL_MINI = process.env.OPENAI_MODEL_MINI || "gpt-4o-mini";
 const FALLBACK = "gpt-4o";
 const FALLBACK_MINI = "gpt-4o-mini";
+
+// What this deployment is configured to use. Surfaced on /api/health so a model
+// switch can be verified instead of assumed.
+export function activeModels() {
+  return { model: MODEL, modelMini: MODEL_MINI };
+}
 
 // True when the error means the model can't be used by this key (not a transient
 // failure) — so we should retry with the known-good fallback model.
