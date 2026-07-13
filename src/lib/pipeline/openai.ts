@@ -1,34 +1,55 @@
-// Shared OpenAI chat client + model selection.
+// Shared OpenAI chat client + model selection. Every chat call in the pipeline
+// (tagging, chunk summaries, other-reassignment, vision, the machine guide, chapter
+// search) goes through chatComplete() here, so this file is the ONE place a model
+// is chosen.
 //
-// The model is configurable via env so you can point at a newer model without
-// code changes:
-//   OPENAI_MODEL       (flagship, default gpt-4o)      — used for vision + the guide
-//   OPENAI_MODEL_MINI  (cheaper,  default gpt-4o-mini) — used for tagging + search
-// If the configured model isn't available to the key, calls auto-fall back to
-// gpt-4o / gpt-4o-mini so the pipeline keeps working.
+//   MODEL       — flagship: vision + the machine guide
+//   MODEL_MINI  — cheaper:  tagging, chunk summaries, reassignment, chapter search
 //
-// NOTE on token limits: every call sends `max_completion_tokens`, never
-// `max_tokens`. GPT-5 models REJECT max_tokens outright; gpt-4o accepts both. One
-// parameter therefore works for every model, with no branching.
+// The model is PINNED in code, not read from the environment. That is deliberate:
+// the Azure ConfigMap sets OPENAI_MODEL=gpt-4o, and an env var beats a code
+// default — so a default alone would silently keep the deployment on gpt-4o. Pinning
+// here guarantees the same model everywhere without an App Config change.
 //
-// The fallback is a safety net, but it is also a trap when comparing models: a key
-// without access to the configured model silently produces gpt-4o output that looks
-// like success. `activeModels()` is exposed on /api/health, and a fallback logs a
-// warning, so you can always prove which model actually ran.
+// Transcription is NOT affected. It stays on whisper-1 (see transcribe.ts): no GPT-5
+// speech-to-text model exists, and the gpt-4o-transcribe models refuse verbose_json,
+// so they return no per-segment timestamps — which chapters, thumbnails and chunk
+// boundaries all depend on.
+//
+// NOTE on token limits: every call sends `max_completion_tokens`, never `max_tokens`.
+// GPT-5 models REJECT max_tokens outright; gpt-4o accepts both, so one parameter works
+// for every model with no branching.
+//
+// The fallback is a safety net, but also a trap when comparing models: a key without
+// access to the pinned model would silently produce gpt-4o output that looks like
+// success. So a fallback logs a warning, and activeModels() is exposed on /api/health
+// — together they prove which model actually ran.
 import OpenAI from "openai";
 import type { ChatCompletionCreateParamsNonStreaming } from "openai/resources/chat/completions";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const MODEL = process.env.OPENAI_MODEL || "gpt-4o";
-const MODEL_MINI = process.env.OPENAI_MODEL_MINI || "gpt-4o-mini";
-const FALLBACK = "gpt-4o";
-const FALLBACK_MINI = "gpt-4o-mini";
+const MODEL: string = "gpt-5.4";
+const MODEL_MINI: string = "gpt-5.4-mini";
+const FALLBACK: string = "gpt-4o";
+const FALLBACK_MINI: string = "gpt-4o-mini";
 
-// What this deployment is configured to use. Surfaced on /api/health so a model
-// switch can be verified instead of assumed.
+// Set the first time a call has to fall back, i.e. the key cannot use the pinned
+// model. Reported on /api/health, because "configured model" alone is not proof:
+// without this, health would keep claiming gpt-5.4 while every call silently ran on
+// gpt-4o — and a model comparison would be measuring nothing.
+let fellBackTo: string | null = null;
+
+// What this deployment runs. Surfaced on /api/health so a model switch can be
+// verified rather than assumed.
 export function activeModels() {
-  return { model: MODEL, modelMini: MODEL_MINI };
+  return {
+    model: MODEL,
+    modelMini: MODEL_MINI,
+    transcription: "whisper-1",
+    // null = the pinned models are genuinely being used.
+    fellBackTo,
+  };
 }
 
 // True when the error means the model can't be used by this key (not a transient
@@ -59,6 +80,7 @@ export async function chatComplete(params: ChatParams, opts?: { mini?: boolean }
   } catch (err) {
     if (primary !== fallback && isModelUnavailable(err)) {
       console.warn(`[openai] model "${primary}" unavailable — falling back to "${fallback}"`);
+      fellBackTo = fallback; // surfaced on /api/health so this is never silent
       return openai.chat.completions.create({ ...params, model: fallback });
     }
     throw err;
