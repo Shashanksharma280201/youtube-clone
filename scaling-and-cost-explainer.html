@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Video Extraction Service — Scaling &amp; Cost Explainer</title>
+<style>
+  :root {
+    --bg: #f7f8fb;
+    --surface: #ffffff;
+    --surface-2: #f1f3f9;
+    --border: #e4e7ef;
+    --border-strong: #d3d8e6;
+    --ink: #1a1d29;
+    --ink-2: #4b5168;
+    --ink-3: #7b8199;
+    --accent: #5b47e0;
+    --accent-soft: #ede9ff;
+    --accent-ink: #3d2fb8;
+    --green: #1a9d6b;
+    --green-soft: #e2f6ee;
+    --amber: #c67a00;
+    --amber-soft: #fbf0dc;
+    --red: #d64545;
+    --red-soft: #fce4e4;
+    --blue: #2f6fdb;
+    --blue-soft: #e5eefc;
+    --radius: 14px;
+    --shadow: 0 1px 2px rgba(20,24,40,.04), 0 8px 24px rgba(20,24,40,.06);
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+  /* Header */
+  header.hero {
+    background:
+      radial-gradient(120% 140% at 100% 0%, #efeaff 0%, rgba(239,234,255,0) 55%),
+      linear-gradient(180deg, #ffffff 0%, #fbfbfe 100%);
+    border-bottom: 1px solid var(--border);
+  }
+  .hero-inner { padding: 56px 24px 44px; max-width: 960px; margin: 0 auto; }
+  .kicker {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--accent-ink); background: var(--accent-soft);
+    padding: 6px 12px; border-radius: 999px; margin-bottom: 18px;
+  }
+  .kicker .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  h1 { font-size: 40px; line-height: 1.12; margin: 0 0 14px; letter-spacing: -.02em; }
+  .lede { font-size: 18px; color: var(--ink-2); margin: 0; max-width: 680px; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+  .chip {
+    font-size: 13px; color: var(--ink-2); background: var(--surface);
+    border: 1px solid var(--border); padding: 7px 13px; border-radius: 999px;
+  }
+  .chip b { color: var(--ink); font-weight: 600; }
+
+  /* TOC */
+  nav.toc { position: sticky; top: 0; z-index: 20; background: rgba(247,248,251,.85); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+  .toc-inner { display: flex; gap: 4px; flex-wrap: wrap; padding: 12px 24px; max-width: 960px; margin: 0 auto; }
+  .toc a { font-size: 13.5px; font-weight: 500; color: var(--ink-2); text-decoration: none; padding: 6px 12px; border-radius: 8px; }
+  .toc a:hover { background: var(--surface-2); color: var(--ink); }
+
+  section { padding: 44px 0 8px; }
+  .sec-num { font-family: var(--mono); font-size: 13px; color: var(--accent); font-weight: 600; }
+  h2 { font-size: 27px; letter-spacing: -.015em; margin: 6px 0 8px; }
+  h3 { font-size: 18px; margin: 28px 0 8px; }
+  p { color: var(--ink-2); margin: 12px 0; }
+  p strong, li strong { color: var(--ink); font-weight: 600; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow); padding: 24px; margin: 20px 0;
+  }
+  .fig { margin: 22px 0; }
+  .fig svg { display: block; width: 100%; height: auto; }
+  .fig figcaption { font-size: 13px; color: var(--ink-3); margin-top: 10px; text-align: center; }
+
+  /* Verdict banners */
+  .verdict { display: flex; gap: 14px; align-items: flex-start; padding: 18px 20px; border-radius: var(--radius); margin: 18px 0; border: 1px solid; }
+  .verdict .icon { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 15px; color: #fff; margin-top: 1px; }
+  .verdict.good { background: var(--green-soft); border-color: #bce6d3; }
+  .verdict.good .icon { background: var(--green); }
+  .verdict.good .v-title { color: #0f6b48; }
+  .verdict.warn { background: var(--amber-soft); border-color: #f0dcb0; }
+  .verdict.warn .icon { background: var(--amber); }
+  .verdict.warn .v-title { color: #8a5600; }
+  .v-title { font-weight: 700; font-size: 16px; margin: 0 0 3px; }
+  .verdict p { margin: 0; color: var(--ink-2); }
+
+  /* two column compare */
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+  .compare .col { border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; background: var(--surface); }
+  .compare .col.no { background: #fdfcfe; }
+  .col-head { font-weight: 700; font-size: 15px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .tag { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 3px 8px; border-radius: 6px; }
+  .tag.keep { background: var(--green-soft); color: #0f6b48; }
+  .tag.skip { background: var(--red-soft); color: #a82f2f; }
+  ul.clean { list-style: none; padding: 0; margin: 0; }
+  ul.clean li { position: relative; padding: 5px 0 5px 24px; color: var(--ink-2); font-size: 14.5px; }
+  ul.clean li::before { content: ""; position: absolute; left: 4px; top: 13px; width: 8px; height: 8px; border-radius: 50%; background: var(--border-strong); }
+  ul.clean li.y::before { background: var(--green); }
+  ul.clean li.n::before { background: var(--red); }
+
+  /* code */
+  code { font-family: var(--mono); font-size: .88em; background: var(--surface-2); border: 1px solid var(--border); padding: 1px 6px; border-radius: 5px; color: var(--accent-ink); }
+  .file-ref { font-family: var(--mono); font-size: 12.5px; color: var(--ink-3); }
+
+  /* tables */
+  table { width: 100%; border-collapse: collapse; margin: 18px 0; font-size: 14.5px; overflow: hidden; border-radius: var(--radius); border: 1px solid var(--border); }
+  thead th { background: var(--surface-2); text-align: left; padding: 12px 16px; font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); font-weight: 600; }
+  tbody td { padding: 12px 16px; border-top: 1px solid var(--border); color: var(--ink-2); }
+  tbody tr:nth-child(even) { background: #fcfcfe; }
+  td.num { font-family: var(--mono); color: var(--ink); text-align: right; }
+  td strong { color: var(--ink); }
+
+  .callout { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 14px 18px; border-radius: 0 10px 10px 0; margin: 18px 0; }
+  .callout p { margin: 0; color: var(--accent-ink); font-size: 14.5px; }
+  .callout p strong { color: var(--accent-ink); }
+
+  footer { margin-top: 40px; border-top: 1px solid var(--border); padding: 28px 0 60px; color: var(--ink-3); font-size: 13px; text-align: center; }
+
+  @media (max-width: 720px) {
+    h1 { font-size: 30px; }
+    .compare { grid-template-columns: 1fr; }
+    .hero-inner { padding: 40px 20px 32px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <span class="kicker"><span class="dot"></span> Architecture &amp; Scaling Note</span>
+    <h1>Running the video-extraction algorithm at scale</h1>
+    <p class="lede">A plain-language walkthrough of three questions: should the service move to Python, what happens to very long videos that take hours to process, and what each video costs in API credits.</p>
+    <div class="meta-row">
+      <span class="chip"><b>Service</b> &nbsp;POST /api/v1/videoExtraction</span>
+      <span class="chip"><b>Stack</b> &nbsp;Next.js + durable Workflow</span>
+      <span class="chip"><b>Focus</b> &nbsp;Backend only, no web UI</span>
+    </div>
+  </div>
+</header>
+
+<nav class="toc">
+  <div class="toc-inner">
+    <a href="#overview">Overview</a>
+    <a href="#language">1 · Python rewrite?</a>
+    <a href="#timeout">2 · Long videos &amp; timeouts</a>
+    <a href="#pipeline">3 · The pipeline</a>
+    <a href="#cost">4 · API cost</a>
+    <a href="#takeaways">Takeaways</a>
+  </div>
+</nav>
+
+<main class="wrap">
+
+  <!-- OVERVIEW -->
+  <section id="overview">
+    <span class="sec-num">00</span>
+    <h2>How the service is built today</h2>
+    <p>The service is a single HTTP endpoint. A caller sends it a video URL; it returns the extracted chunks. Behind that door, the real work runs as a <strong>durable workflow</strong> — a background job that keeps running even if the request disconnects or a server restarts. The algorithm itself (audio slicing, transcription, tagging, vision) lives in framework-free modules, separate from anything Next.js-specific.</p>
+
+    <figure class="fig card">
+      <svg viewBox="0 0 900 300" role="img" aria-label="High level architecture">
+        <defs>
+          <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M0,0 L9,4.5 L0,9 z" fill="#7b8199"/>
+          </marker>
+          <marker id="arrowA" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M0,0 L9,4.5 L0,9 z" fill="#5b47e0"/>
+          </marker>
+        </defs>
+        <!-- caller -->
+        <rect x="20" y="112" width="150" height="76" rx="12" fill="#fff" stroke="#d3d8e6"/>
+        <text x="95" y="142" text-anchor="middle" font-family="var(--sans)" font-size="15" font-weight="700" fill="#1a1d29">Calling service</text>
+        <text x="95" y="162" text-anchor="middle" font-size="12.5" fill="#7b8199">another algorithm</text>
+
+        <!-- API route -->
+        <rect x="240" y="100" width="180" height="100" rx="12" fill="#ede9ff" stroke="#c9bffa"/>
+        <text x="330" y="132" text-anchor="middle" font-size="15" font-weight="700" fill="#3d2fb8">API route</text>
+        <text x="330" y="152" text-anchor="middle" font-size="12" fill="#5b47e0">the doorway (thin)</text>
+        <text x="330" y="172" text-anchor="middle" font-size="11" fill="#7b8199">holds request open,</text>
+        <text x="330" y="186" text-anchor="middle" font-size="11" fill="#7b8199">or returns 202</text>
+
+        <!-- workflow -->
+        <rect x="500" y="40" width="220" height="120" rx="12" fill="#e2f6ee" stroke="#bce6d3"/>
+        <text x="610" y="70" text-anchor="middle" font-size="15" font-weight="700" fill="#0f6b48">Durable Workflow</text>
+        <text x="610" y="90" text-anchor="middle" font-size="12" fill="#1a9d6b">runs OUTSIDE the request</text>
+        <text x="610" y="112" text-anchor="middle" font-size="11" fill="#4b5168">survives disconnects &amp;</text>
+        <text x="610" y="126" text-anchor="middle" font-size="11" fill="#4b5168">pod restarts · retries on</text>
+        <text x="610" y="140" text-anchor="middle" font-size="11" fill="#4b5168">rate limits</text>
+
+        <!-- db -->
+        <rect x="540" y="200" width="140" height="66" rx="12" fill="#fff" stroke="#d3d8e6"/>
+        <text x="610" y="228" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1d29">Postgres</text>
+        <text x="610" y="247" text-anchor="middle" font-size="11.5" fill="#7b8199">status + result</text>
+
+        <!-- pipeline -->
+        <rect x="760" y="100" width="120" height="100" rx="12" fill="#e5eefc" stroke="#bcd3f5"/>
+        <text x="820" y="140" text-anchor="middle" font-size="13.5" font-weight="700" fill="#2f6fdb">Pipeline</text>
+        <text x="820" y="158" text-anchor="middle" font-size="11" fill="#4b5168">ffmpeg · Whisper</text>
+        <text x="820" y="172" text-anchor="middle" font-size="11" fill="#4b5168">GPT · Vision</text>
+
+        <!-- arrows -->
+        <line x1="172" y1="150" x2="236" y2="150" stroke="#7b8199" stroke-width="1.6" marker-end="url(#arrow)"/>
+        <line x1="422" y1="120" x2="496" y2="105" stroke="#5b47e0" stroke-width="1.6" marker-end="url(#arrowA)"/>
+        <line x1="720" y1="120" x2="758" y2="140" stroke="#7b8199" stroke-width="1.6" marker-end="url(#arrow)"/>
+        <line x1="610" y1="160" x2="610" y2="198" stroke="#7b8199" stroke-width="1.6" marker-end="url(#arrow)"/>
+        <line x1="536" y1="233" x2="422" y2="185" stroke="#7b8199" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+        <text x="455" y="225" font-size="10.5" fill="#7b8199">reads status</text>
+      </svg>
+      <figcaption>The route is a thin doorway. The workflow is the engine, and it runs independently of the HTTP connection.</figcaption>
+    </figure>
+  </section>
+
+  <!-- LANGUAGE -->
+  <section id="language">
+    <span class="sec-num">01</span>
+    <h2>Do we need to rewrite from Next.js to Python?</h2>
+
+    <div class="verdict good">
+      <div class="icon">&#10003;</div>
+      <div>
+        <p class="v-title">No rewrite needed</p>
+        <p>The language is not the bottleneck. The heavy work is external API and ffmpeg calls that run identically in any language — Python would not make them faster.</p>
+      </div>
+    </div>
+
+    <p>It helps to see <em>where the work actually happens</em>. "Next.js" is only the doorway. The algorithm already lives in plain, framework-free modules. The workflow file even says so directly:</p>
+
+    <div class="callout">
+      <p>"All domain logic lives in the orchestration-agnostic <code>src/lib/pipeline/*</code> modules, so moving off this host later means swapping <strong>one file</strong>, not the pipeline." <span class="file-ref">— src/workflows/transcribe-video.ts</span></p>
+    </div>
+
+    <figure class="fig card">
+      <svg viewBox="0 0 900 210" role="img" aria-label="Thin layer versus engine">
+        <!-- thin doorway -->
+        <rect x="30" y="40" width="250" height="130" rx="12" fill="#ede9ff" stroke="#c9bffa"/>
+        <text x="155" y="70" text-anchor="middle" font-size="14" font-weight="700" fill="#3d2fb8">Next.js layer — thin</text>
+        <text x="155" y="96" text-anchor="middle" font-size="12" fill="#5b47e0">route.ts · request parsing</text>
+        <text x="155" y="114" text-anchor="middle" font-size="12" fill="#5b47e0">start workflow · respond</text>
+        <text x="155" y="146" text-anchor="middle" font-size="11.5" fill="#7b8199">swap this if you ever move host</text>
+
+        <!-- engine -->
+        <rect x="330" y="20" width="540" height="170" rx="12" fill="#f1f3f9" stroke="#d3d8e6"/>
+        <text x="600" y="46" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1d29">The engine — language-agnostic (unchanged by a rewrite)</text>
+        <g font-size="11.5" fill="#4b5168" font-family="var(--mono)">
+          <rect x="352" y="62" width="150" height="34" rx="7" fill="#fff" stroke="#e4e7ef"/><text x="427" y="83" text-anchor="middle">ffmpeg (slicing)</text>
+          <rect x="518" y="62" width="150" height="34" rx="7" fill="#fff" stroke="#e4e7ef"/><text x="593" y="83" text-anchor="middle">Whisper API</text>
+          <rect x="684" y="62" width="164" height="34" rx="7" fill="#fff" stroke="#e4e7ef"/><text x="766" y="83" text-anchor="middle">GPT-5.4 text</text>
+          <rect x="352" y="108" width="150" height="34" rx="7" fill="#fff" stroke="#e4e7ef"/><text x="427" y="129" text-anchor="middle">Vision API</text>
+          <rect x="518" y="108" width="150" height="34" rx="7" fill="#fff" stroke="#e4e7ef"/><text x="593" y="129" text-anchor="middle">tagging</text>
+          <rect x="684" y="108" width="164" height="34" rx="7" fill="#fff" stroke="#e4e7ef"/><text x="766" y="129" text-anchor="middle">domain extract</text>
+        </g>
+        <text x="600" y="170" text-anchor="middle" font-size="11.5" fill="#7b8199">These calls take the same time in Python, Node, or Go — they run on OpenAI's servers, not yours.</text>
+      </svg>
+      <figcaption>A rewrite would replace the small purple box and leave the expensive grey box exactly as slow (or fast) as it is now.</figcaption>
+    </figure>
+
+    <div class="compare">
+      <div class="col">
+        <div class="col-head"><span class="tag keep">Keep</span> Language &amp; framework</div>
+        <ul class="clean">
+          <li class="y">Pipeline is already isolated and portable</li>
+          <li class="y">The workflow engine gives durability for free</li>
+          <li class="y">A rewrite is weeks of risk for zero speed gain</li>
+        </ul>
+      </div>
+      <div class="col no">
+        <div class="col-head"><span class="tag skip">Ignore</span> The Python idea</div>
+        <ul class="clean">
+          <li class="n">Won't speed up Whisper / GPT / Vision calls</li>
+          <li class="n">Won't reduce cost per video</li>
+          <li class="n">Scaling is an <strong>infrastructure</strong> question, not a language one</li>
+        </ul>
+      </div>
+    </div>
+
+    <p><strong>What "scale" actually means here:</strong> running more videos in parallel. That is solved by running more workers / more workflow concurrency and respecting the transcription rate limits — the same answer in any language.</p>
+  </section>
+
+  <!-- TIMEOUT -->
+  <section id="timeout">
+    <span class="sec-num">02</span>
+    <h2>What happens to a 4–5 hour video that takes 30+ minutes?</h2>
+
+    <div class="verdict good">
+      <div class="icon">&#10003;</div>
+      <div>
+        <p class="v-title">Already handled — the job never dies with the request</p>
+        <p>The processing runs in the durable workflow, not in the HTTP request. When the wait runs long, the API returns <strong>202 "still running"</strong> and the caller simply asks again later with the same <code>resourceId</code>.</p>
+      </div>
+    </div>
+
+    <p>The fear — "the API closes after 30 minutes and we lose the work" — mixes up two separate things: the <strong>HTTP connection</strong> (short-lived) and the <strong>job</strong> (durable). They are not the same.</p>
+
+    <figure class="fig card">
+      <svg viewBox="0 0 900 340" role="img" aria-label="Long video sequence: 202 then poll">
+        <defs>
+          <marker id="a2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#5b47e0"/></marker>
+          <marker id="a3" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#1a9d6b"/></marker>
+        </defs>
+        <!-- lanes -->
+        <text x="90" y="28" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1d29">Caller</text>
+        <text x="450" y="28" text-anchor="middle" font-size="13" font-weight="700" fill="#3d2fb8">API route</text>
+        <text x="810" y="28" text-anchor="middle" font-size="13" font-weight="700" fill="#0f6b48">Durable Workflow</text>
+        <line x1="90" y1="40" x2="90" y2="320" stroke="#e4e7ef" stroke-width="2"/>
+        <line x1="450" y1="40" x2="450" y2="320" stroke="#e4e7ef" stroke-width="2"/>
+        <line x1="810" y1="40" x2="810" y2="320" stroke="#e4e7ef" stroke-width="2"/>
+
+        <!-- 1 request -->
+        <line x1="92" y1="62" x2="446" y2="62" stroke="#5b47e0" stroke-width="1.6" marker-end="url(#a2)"/>
+        <text x="265" y="55" text-anchor="middle" font-size="11.5" fill="#4b5168">POST video URL + resourceId</text>
+        <!-- start workflow -->
+        <line x1="452" y1="82" x2="806" y2="82" stroke="#1a9d6b" stroke-width="1.6" marker-end="url(#a3)"/>
+        <text x="628" y="75" text-anchor="middle" font-size="11.5" fill="#4b5168">start job (runs on its own)</text>
+
+        <!-- workflow long bar -->
+        <rect x="792" y="92" width="36" height="150" rx="8" fill="#e2f6ee" stroke="#bce6d3"/>
+        <text x="810" y="120" text-anchor="middle" font-size="10.5" fill="#0f6b48" transform="rotate(90 810 165)">processing … hours if needed</text>
+
+        <!-- wait window -->
+        <rect x="440" y="92" width="20" height="120" rx="6" fill="#ede9ff" stroke="#c9bffa"/>
+        <text x="405" y="150" text-anchor="middle" font-size="10.5" fill="#5b47e0" transform="rotate(-90 405 150)">holds ~25 min</text>
+
+        <!-- 202 back -->
+        <line x1="446" y1="230" x2="94" y2="230" stroke="#c67a00" stroke-width="1.8" marker-end="url(#a2)"/>
+        <rect x="200" y="216" width="150" height="0"/>
+        <text x="265" y="223" text-anchor="middle" font-size="11.5" font-weight="700" fill="#8a5600">202 still running</text>
+
+        <!-- later poll -->
+        <line x1="92" y1="270" x2="446" y2="270" stroke="#5b47e0" stroke-width="1.6" marker-end="url(#a2)"/>
+        <text x="265" y="263" text-anchor="middle" font-size="11.5" fill="#4b5168">later: POST again, same resourceId</text>
+
+        <!-- 200 result -->
+        <line x1="446" y1="300" x2="94" y2="300" stroke="#1a9d6b" stroke-width="1.8" marker-end="url(#a2)"/>
+        <text x="265" y="293" text-anchor="middle" font-size="11.5" font-weight="700" fill="#0f6b48">200 done — chunks in body</text>
+      </svg>
+      <figcaption>The connection may close after ~25 minutes, but the workflow keeps going. Re-calling with the same <code>resourceId</code> attaches to the running job and returns the finished result the moment it is ready.</figcaption>
+    </figure>
+
+    <div class="card">
+      <h3 style="margin-top:0">Why this is safe, in the code</h3>
+      <ul class="clean">
+        <li class="y"><strong>Job outlives the request:</strong> the route calls <code>start(transcribeVideoWorkflow, …)</code> — a background job, not inline work. <span class="file-ref">route.ts:99</span></li>
+        <li class="y"><strong>Graceful timeout:</strong> after <code>WAIT_MS</code> (default 25 min) it returns 202 instead of hanging until a proxy kills it. <span class="file-ref">route.ts:36, 118–127</span></li>
+        <li class="y"><strong>Idempotent re-call:</strong> an existing <code>resourceId</code> is never reprocessed; it attaches to the in-flight run or returns the finished result. <span class="file-ref">route.ts:53–56</span></li>
+        <li class="y"><strong>Streams, never downloads the whole file:</strong> ffmpeg range-reads each small slice, so even 4-hour videos stay within the small /tmp budget. <span class="file-ref">transcribe-video.ts:1–7</span></li>
+        <li class="y"><strong>Paces around rate limits:</strong> a transcription 429 becomes a retryable wait, up to 25 retries per chunk — built for multi-hour videos. <span class="file-ref">transcribe-video.ts:114, 133</span></li>
+      </ul>
+    </div>
+
+    <div class="verdict warn">
+      <div class="icon">&#33;</div>
+      <div>
+        <p class="v-title">The one thing to confirm on the caller side</p>
+        <p>The calling service must treat <strong>202 as "not done, poll again,"</strong> not as success and not as failure. If it already polls, long videos need no code change at all. This is a contract to verify, not a rewrite.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- PIPELINE -->
+  <section id="pipeline">
+    <span class="sec-num">03</span>
+    <h2>What the pipeline actually does (and where the money goes)</h2>
+    <p>Each stage is a durable step. Two of them cost money on every video: transcription (Whisper) and the language + vision steps (GPT-5.4 and Vision). The rest is ffmpeg and bookkeeping.</p>
+
+    <figure class="fig card">
+      <svg viewBox="0 0 900 360" role="img" aria-label="Pipeline steps">
+        <defs>
+          <marker id="ap" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#b6bccf"/></marker>
+        </defs>
+        <!-- legend -->
+        <g font-size="11.5">
+          <rect x="600" y="12" width="12" height="12" rx="3" fill="#e5eefc" stroke="#bcd3f5"/><text x="618" y="22" fill="#4b5168">free (ffmpeg / DB)</text>
+          <rect x="720" y="12" width="12" height="12" rx="3" fill="#e2f6ee" stroke="#bce6d3"/><text x="738" y="22" fill="#4b5168">Whisper $</text>
+          <rect x="820" y="12" width="12" height="12" rx="3" fill="#fbf0dc" stroke="#f0dcb0"/><text x="838" y="22" fill="#4b5168">GPT / Vision $$</text>
+        </g>
+
+        <!-- row helper positions -->
+        <!-- step boxes -->
+        <g font-family="var(--sans)">
+          <!-- prepare -->
+          <rect x="24" y="50" width="180" height="56" rx="10" fill="#e5eefc" stroke="#bcd3f5"/>
+          <text x="114" y="74" text-anchor="middle" font-size="13.5" font-weight="700" fill="#2f6fdb">prepare</text>
+          <text x="114" y="92" text-anchor="middle" font-size="11" fill="#4b5168">probe duration, slice timeline</text>
+
+          <!-- transcribe -->
+          <rect x="240" y="50" width="180" height="56" rx="10" fill="#e2f6ee" stroke="#bce6d3"/>
+          <text x="330" y="74" text-anchor="middle" font-size="13.5" font-weight="700" fill="#0f6b48">transcribe ×N</text>
+          <text x="330" y="92" text-anchor="middle" font-size="11" fill="#4b5168">Whisper per ~10-min slice</text>
+
+          <!-- tag -->
+          <rect x="456" y="50" width="180" height="56" rx="10" fill="#fbf0dc" stroke="#f0dcb0"/>
+          <text x="546" y="74" text-anchor="middle" font-size="13.5" font-weight="700" fill="#8a5600">tag</text>
+          <text x="546" y="92" text-anchor="middle" font-size="11" fill="#4b5168">GPT: phases + segment tags</text>
+
+          <!-- frames/vision -->
+          <rect x="672" y="50" width="200" height="56" rx="10" fill="#fbf0dc" stroke="#f0dcb0"/>
+          <text x="772" y="74" text-anchor="middle" font-size="13.5" font-weight="700" fill="#8a5600">frames + vision</text>
+          <text x="772" y="92" text-anchor="middle" font-size="11" fill="#4b5168">describe gaps, chapter thumbs</text>
+
+          <!-- summarize -->
+          <rect x="672" y="150" width="200" height="56" rx="10" fill="#fbf0dc" stroke="#f0dcb0"/>
+          <text x="772" y="174" text-anchor="middle" font-size="13.5" font-weight="700" fill="#8a5600">summarize</text>
+          <text x="772" y="192" text-anchor="middle" font-size="11" fill="#4b5168">GPT: per-chapter summary+tools</text>
+
+          <!-- reassign -->
+          <rect x="456" y="150" width="180" height="56" rx="10" fill="#fbf0dc" stroke="#f0dcb0"/>
+          <text x="546" y="174" text-anchor="middle" font-size="13.5" font-weight="700" fill="#8a5600">reassign</text>
+          <text x="546" y="192" text-anchor="middle" font-size="11" fill="#4b5168">GPT: rescue "other" chapters</text>
+
+          <!-- domain -->
+          <rect x="240" y="150" width="180" height="56" rx="10" fill="#fbf0dc" stroke="#f0dcb0"/>
+          <text x="330" y="174" text-anchor="middle" font-size="13.5" font-weight="700" fill="#8a5600">domain extract</text>
+          <text x="330" y="192" text-anchor="middle" font-size="11" fill="#4b5168">GPT: build machine guide</text>
+
+          <!-- enrich -->
+          <rect x="24" y="150" width="180" height="56" rx="10" fill="#fbf0dc" stroke="#f0dcb0"/>
+          <text x="114" y="174" text-anchor="middle" font-size="13.5" font-weight="700" fill="#8a5600">enrich guide</text>
+          <text x="114" y="192" text-anchor="middle" font-size="11" fill="#4b5168">Vision: "where on screen"</text>
+
+          <!-- save -->
+          <rect x="360" y="260" width="180" height="56" rx="10" fill="#e5eefc" stroke="#bcd3f5"/>
+          <text x="450" y="284" text-anchor="middle" font-size="13.5" font-weight="700" fill="#2f6fdb">save</text>
+          <text x="450" y="302" text-anchor="middle" font-size="11" fill="#4b5168">write result → Postgres, DONE</text>
+        </g>
+
+        <!-- connectors row 1 -->
+        <line x1="204" y1="78" x2="236" y2="78" stroke="#b6bccf" stroke-width="1.5" marker-end="url(#ap)"/>
+        <line x1="420" y1="78" x2="452" y2="78" stroke="#b6bccf" stroke-width="1.5" marker-end="url(#ap)"/>
+        <line x1="636" y1="78" x2="668" y2="78" stroke="#b6bccf" stroke-width="1.5" marker-end="url(#ap)"/>
+        <!-- down to row 2 -->
+        <line x1="772" y1="106" x2="772" y2="146" stroke="#b6bccf" stroke-width="1.5" marker-end="url(#ap)"/>
+        <line x1="672" y1="178" x2="640" y2="178" stroke="#b6bccf" stroke-width="1.5" marker-end="url(#ap)"/>
+        <line x1="456" y1="178" x2="424" y2="178" stroke="#b6bccf" stroke-width="1.5" marker-end="url(#ap)"/>
+        <line x1="240" y1="178" x2="208" y2="178" stroke="#b6bccf" stroke-width="1.5" marker-end="url(#ap)"/>
+        <!-- down to save -->
+        <path d="M114,206 L114,236 L360,236 L360,258" fill="none" stroke="#b6bccf" stroke-width="1.5" marker-end="url(#ap)"/>
+      </svg>
+      <figcaption>Green step scales with video <em>length</em>. Amber steps scale with the <em>amount of transcript and number of chapters</em>. Blue steps are effectively free.</figcaption>
+    </figure>
+  </section>
+
+  <!-- COST -->
+  <section id="cost">
+    <span class="sec-num">04</span>
+    <h2>How much does one video cost in API credits?</h2>
+    <p>Cost has two buckets. One is predictable, one is variable.</p>
+
+    <h3>Bucket A — Whisper transcription (predictable)</h3>
+    <p>Whisper (<code>whisper-1</code>) bills per minute of audio, for the whole video, at about <strong>$0.006 / min</strong>. This is the part we can state exactly:</p>
+
+    <figure class="fig card">
+      <svg viewBox="0 0 900 240" role="img" aria-label="Whisper cost by length">
+        <!-- axes -->
+        <line x1="70" y1="30" x2="70" y2="190" stroke="#d3d8e6" stroke-width="1.5"/>
+        <line x1="70" y1="190" x2="860" y2="190" stroke="#d3d8e6" stroke-width="1.5"/>
+        <text x="34" y="36" font-size="11" fill="#7b8199">$1.44</text>
+        <text x="40" y="112" font-size="11" fill="#7b8199">$0.72</text>
+        <text x="40" y="190" font-size="11" fill="#7b8199">$0</text>
+
+        <!-- bars: scale $1.44 -> 160px -->
+        <!-- 10 min = 0.06 -> ~7px -->
+        <rect x="150" y="183" width="90" height="7" rx="3" fill="#1a9d6b"/>
+        <text x="195" y="176" text-anchor="middle" font-size="12" font-weight="700" fill="#0f6b48">$0.06</text>
+        <text x="195" y="208" text-anchor="middle" font-size="12" fill="#4b5168">10 min</text>
+
+        <!-- 30 min = 0.18 -> ~20px -->
+        <rect x="330" y="170" width="90" height="20" rx="3" fill="#1a9d6b"/>
+        <text x="375" y="163" text-anchor="middle" font-size="12" font-weight="700" fill="#0f6b48">$0.18</text>
+        <text x="375" y="208" text-anchor="middle" font-size="12" fill="#4b5168">30 min</text>
+
+        <!-- 60 min = 0.36 -> 40px -->
+        <rect x="510" y="150" width="90" height="40" rx="3" fill="#1a9d6b"/>
+        <text x="555" y="143" text-anchor="middle" font-size="12" font-weight="700" fill="#0f6b48">$0.36</text>
+        <text x="555" y="208" text-anchor="middle" font-size="12" fill="#4b5168">60 min</text>
+
+        <!-- 240 min = 1.44 -> 160px -->
+        <rect x="690" y="30" width="90" height="160" rx="3" fill="#1a9d6b"/>
+        <text x="735" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#0f6b48">$1.44</text>
+        <text x="735" y="208" text-anchor="middle" font-size="12" fill="#4b5168">4 hr</text>
+      </svg>
+      <figcaption>Whisper cost is linear with duration: length in minutes &times; $0.006.</figcaption>
+    </figure>
+
+    <h3>Bucket B — GPT-5.4 text + Vision (variable)</h3>
+    <p>These steps scale with how much was <em>said</em> and how many <em>chapters</em> the video has, not with raw minutes. A talkative 30-minute repair video with many chapters can cost more here than a quiet 60-minute one. Vision (image) calls are the most expensive single item. This bucket is usually <strong>larger than Whisper</strong>, and it can only be pinned down exactly by measuring real token usage — the code has the numbers, we just do not log them yet.</p>
+
+    <h3>All-in estimate per video</h3>
+    <table>
+      <thead>
+        <tr><th>Video length</th><th>Whisper (exact)</th><th>GPT + Vision (est.)</th><th>Total (rough)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>10 min</strong></td><td class="num">$0.06</td><td class="num">$0.10 – 0.35</td><td class="num"><strong>$0.15 – 0.40</strong></td></tr>
+        <tr><td><strong>30 min</strong></td><td class="num">$0.18</td><td class="num">$0.25 – 0.85</td><td class="num"><strong>$0.40 – 1.00</strong></td></tr>
+        <tr><td><strong>60 min</strong></td><td class="num">$0.36</td><td class="num">$0.50 – 1.60</td><td class="num"><strong>$0.90 – 2.00</strong></td></tr>
+        <tr><td><strong>4 hr</strong></td><td class="num">$1.44</td><td class="num">$2.50 – 7.00</td><td class="num"><strong>$4 – 8+</strong></td></tr>
+      </tbody>
+    </table>
+    <p class="file-ref" style="margin-top:-6px">Whisper figures are firm. GPT + Vision ranges are estimates based on the pipeline's call pattern; treat them as order-of-magnitude until measured.</p>
+
+    <figure class="fig card">
+      <svg viewBox="0 0 900 250" role="img" aria-label="Cost composition stacked">
+        <line x1="70" y1="20" x2="70" y2="195" stroke="#d3d8e6" stroke-width="1.5"/>
+        <line x1="70" y1="195" x2="860" y2="195" stroke="#d3d8e6" stroke-width="1.5"/>
+        <!-- legend -->
+        <rect x="600" y="14" width="12" height="12" rx="3" fill="#1a9d6b"/><text x="618" y="24" font-size="11.5" fill="#4b5168">Whisper</text>
+        <rect x="700" y="14" width="12" height="12" rx="3" fill="#c67a00"/><text x="718" y="24" font-size="11.5" fill="#4b5168">GPT + Vision (mid est.)</text>
+
+        <!-- scale: max ~ $5.75 (4hr mid) -> 165px ; k = 28.7px per $ -->
+        <!-- 10 min: whisper .06 (2px) + gpt .22 (6px) -->
+        <g>
+          <rect x="150" y="187" width="80" height="2" fill="#1a9d6b"/>
+          <rect x="150" y="181" width="80" height="6" fill="#c67a00"/>
+          <text x="190" y="174" text-anchor="middle" font-size="11.5" font-weight="700" fill="#8a5600">~$0.28</text>
+          <text x="190" y="214" text-anchor="middle" font-size="12" fill="#4b5168">10 min</text>
+        </g>
+        <!-- 30 min: whisper .18 (5px) + gpt .55 (16px) -->
+        <g>
+          <rect x="330" y="190" width="80" height="5" fill="#1a9d6b"/>
+          <rect x="330" y="174" width="80" height="16" fill="#c67a00"/>
+          <text x="370" y="167" text-anchor="middle" font-size="11.5" font-weight="700" fill="#8a5600">~$0.73</text>
+          <text x="370" y="214" text-anchor="middle" font-size="12" fill="#4b5168">30 min</text>
+        </g>
+        <!-- 60 min: whisper .36 (10px) + gpt 1.05 (30px) -->
+        <g>
+          <rect x="510" y="185" width="80" height="10" fill="#1a9d6b"/>
+          <rect x="510" y="155" width="80" height="30" fill="#c67a00"/>
+          <text x="550" y="148" text-anchor="middle" font-size="11.5" font-weight="700" fill="#8a5600">~$1.41</text>
+          <text x="550" y="214" text-anchor="middle" font-size="12" fill="#4b5168">60 min</text>
+        </g>
+        <!-- 4 hr: whisper 1.44 (41px) + gpt 4.75 (136px) -->
+        <g>
+          <rect x="690" y="154" width="80" height="41" fill="#1a9d6b"/>
+          <rect x="690" y="18" width="80" height="136" fill="#c67a00"/>
+          <text x="730" y="12" text-anchor="middle" font-size="11.5" font-weight="700" fill="#8a5600">~$6.19</text>
+          <text x="730" y="214" text-anchor="middle" font-size="12" fill="#4b5168">4 hr</text>
+        </g>
+      </svg>
+      <figcaption>The paid work is dominated by GPT + Vision, not transcription. That is where any cost optimisation should focus.</figcaption>
+    </figure>
+
+    <div class="callout">
+      <p><strong>To turn estimates into exact numbers:</strong> every OpenAI response already returns a <code>usage</code> object. Logging it in <code>src/lib/pipeline/openai.ts</code> would give real per-video cost with no guesswork. This is the one small change worth making before scaling up.</p>
+    </div>
+  </section>
+
+  <!-- TAKEAWAYS -->
+  <section id="takeaways">
+    <span class="sec-num">05</span>
+    <h2>Takeaways</h2>
+    <div class="card">
+      <ul class="clean">
+        <li class="y"><strong>Keep Next.js.</strong> The algorithm is already portable and language-independent; a Python rewrite buys no speed and no cost saving.</li>
+        <li class="y"><strong>Long videos are already safe.</strong> The workflow is durable and outlives the request; 202 + re-call with the same <code>resourceId</code> is the built-in path for multi-hour jobs.</li>
+        <li class="y"><strong>Verify the caller polls on 202.</strong> This is the single behavioural contract to confirm — no rewrite involved.</li>
+        <li class="y"><strong>Cost is mostly GPT + Vision.</strong> Whisper is ~$0.006/min and predictable; the variable bucket is bigger and worth measuring.</li>
+        <li class="y"><strong>Next step:</strong> log the <code>usage</code> object to get exact per-video cost before scaling.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    Video Extraction Service &middot; internal architecture note &middot; generated 2026-07-15 &middot; figures for whisper-1 are firm; GPT-5.4 / Vision figures are estimates pending token measurement.
+  </footer>
+</main>
+</body>
+</html>

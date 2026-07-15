@@ -17,8 +17,8 @@ out/
 CLAUDE.md
 /public/uploads
 /upload-videos
-
-
+/docs
+/videos
 
 # local video uploads — only exists in development
 public/uploads/videos/*
