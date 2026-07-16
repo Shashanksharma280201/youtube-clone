@@ -3,6 +3,7 @@
 // durably instead of failing.
 import OpenAI from "openai";
 import { readFile } from "fs/promises";
+import { recordWhisper } from "./usage";
 import {
   NO_SPEECH_PROB_THRESH,
   LOGPROB_THRESH,
@@ -52,7 +53,10 @@ function parseRetryAfter(e: ApiError): number {
 }
 
 // Transcribe a single audio file. Timestamps are relative to that file.
-export async function transcribeAudioFile(filePath: string): Promise<WhisperSeg[]> {
+// `audioSecs` is the length of audio being sent — used only for cost accounting
+// (Whisper bills per minute of audio, so we price the slice we submit, not the
+// speech we get back). Falls back to the last segment's end if not supplied.
+export async function transcribeAudioFile(filePath: string, audioSecs?: number): Promise<WhisperSeg[]> {
   const bytes = await readFile(filePath);
   const file = new File([bytes], "audio.mp3", { type: "audio/mpeg" });
   try {
@@ -62,7 +66,10 @@ export async function transcribeAudioFile(filePath: string): Promise<WhisperSeg[
       response_format: "verbose_json",
       timestamp_granularities: ["segment"],
     });
-    return (result.segments ?? []).map((s) => ({
+    const segs = result.segments ?? [];
+    const billedSecs = audioSecs ?? (segs.length ? segs[segs.length - 1].end : 0);
+    recordWhisper(billedSecs);
+    return segs.map((s) => ({
       id: s.id,
       start: s.start,
       end: s.end,

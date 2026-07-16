@@ -26,6 +26,7 @@ import { analyzeVideo, tagSegments } from "@/lib/pipeline/tag";
 import { generateVideoSegments } from "@/lib/pipeline/thumbnails";
 import { consolidateChapters } from "@/lib/pipeline/consolidate";
 import { extractDomainData, EMPTY_DOMAIN, type DomainData } from "@/lib/pipeline/domain";
+import { logUsageTotal } from "@/lib/pipeline/usage";
 import {
   SEGMENT_SECS,
   SILENCE_CHUNK_SECS,
@@ -102,7 +103,7 @@ async function transcribeChunkStep(
 
     let spoken: RawSegment[];
     try {
-      const segs = await transcribeAudioFile(local);
+      const segs = await transcribeAudioFile(local, dur);
       spoken = segs.map((s) => ({
         id: s.id,
         start: s.start + offset,
@@ -340,6 +341,9 @@ export async function transcribeVideoWorkflow(videoId: string): Promise<{ status
     const enriched = await enrichGuideStep(videoId, key, container, domainData);
 
     await saveStep(videoId, transcript, alignedSegments, reTagged, enriched);
+    // Print the actual tokens + estimated cost for this run. Locally (single process)
+    // this is the whole video's total; in prod, per-call [usage] lines are authoritative.
+    logUsageTotal(`video ${videoId}`);
     return { status: "DONE" };
   } catch (err) {
     const message = (err as Error)?.message ?? "An error occurred during transcription. Please try again.";

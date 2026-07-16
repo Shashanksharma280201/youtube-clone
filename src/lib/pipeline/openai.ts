@@ -26,6 +26,7 @@
 // — together they prove which model actually ran.
 import OpenAI from "openai";
 import type { ChatCompletionCreateParamsNonStreaming } from "openai/resources/chat/completions";
+import { recordChat } from "./usage";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -72,16 +73,23 @@ type ChatParams = Omit<ChatCompletionCreateParamsNonStreaming, "model">;
 
 // Run a chat completion with the configured model; fall back to gpt-4o(-mini) if
 // that model isn't available to the key. `opts.mini` selects the smaller tier.
-export async function chatComplete(params: ChatParams, opts?: { mini?: boolean }) {
+export async function chatComplete(params: ChatParams, opts?: { mini?: boolean; label?: string }) {
   const primary = opts?.mini ? MODEL_MINI : MODEL;
   const fallback = opts?.mini ? FALLBACK_MINI : FALLBACK;
+  const label = opts?.label ?? "chat";
   try {
-    return await openai.chat.completions.create({ ...params, model: primary });
+    const res = await openai.chat.completions.create({ ...params, model: primary });
+    // res.model is the model that actually ran, so accounting stays correct even if
+    // the account silently served a dated snapshot id.
+    recordChat(res.model ?? primary, res.usage, label);
+    return res;
   } catch (err) {
     if (primary !== fallback && isModelUnavailable(err)) {
       console.warn(`[openai] model "${primary}" unavailable — falling back to "${fallback}"`);
       fellBackTo = fallback; // surfaced on /api/health so this is never silent
-      return openai.chat.completions.create({ ...params, model: fallback });
+      const res = await openai.chat.completions.create({ ...params, model: fallback });
+      recordChat(res.model ?? fallback, res.usage, label);
+      return res;
     }
     throw err;
   }
