@@ -21,8 +21,9 @@ export type VideoSegment = {
   start: number;
   end: number;
   thumbnailPath: string | null;
-  // Per-chunk enrichment (videoExtraction): a one-line summary and the tools
-  // named in this chunk. Optional so older records without them still type.
+  // Per-chunk enrichment (videoExtraction): a short LLM title, a one-line summary,
+  // and the tools named in this chunk. Optional so older records without them still type.
+  title?: string;
   summarizedText?: string;
   tools?: string[];
 };

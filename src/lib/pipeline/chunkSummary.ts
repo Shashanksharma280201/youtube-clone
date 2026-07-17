@@ -2,11 +2,11 @@ import { chatComplete } from "./openai";
 import { withConcurrency, TAG_BATCH_SIZE } from "./types";
 
 export type ChunkInput = { mainTag: string; subTag: string; transcript: string };
-export type ChunkSummary = { summarizedText: string; tools: string[] };
+export type ChunkSummary = { title: string; summarizedText: string; tools: string[] };
 
 // Never throws. A malformed model response degrades every chunk to empty values.
 export function parseChunkSummaries(text: string, count: number): ChunkSummary[] {
-  type Entry = { i?: number; summary?: string; tools?: unknown };
+  type Entry = { i?: number; title?: string; summary?: string; tools?: unknown };
   let arr: Entry[] | null = null;
   try {
     const parsed = JSON.parse(text) as { chunks?: unknown };
@@ -16,11 +16,12 @@ export function parseChunkSummaries(text: string, count: number): ChunkSummary[]
   }
   return Array.from({ length: count }, (_, j) => {
     const e = arr?.find((x) => x?.i === j) ?? arr?.[j];
+    const title = typeof e?.title === "string" ? e.title.trim() : "";
     const summary = typeof e?.summary === "string" ? e.summary.trim() : "";
     const tools = Array.isArray(e?.tools)
       ? (e!.tools as unknown[]).filter((t): t is string => typeof t === "string").map((t) => t.trim())
       : [];
-    return { summarizedText: summary, tools };
+    return { title, summarizedText: summary, tools };
   });
 }
 
@@ -48,7 +49,7 @@ export async function summarizeChunks(chunks: ChunkInput[]): Promise<ChunkSummar
               {
                 role: "system",
                 content:
-                  'For each transcript chunk write "summary": one plain sentence describing what happens, and "tools": an array of the physical tools/instruments named in that chunk (empty if none). Do not invent tools. Return ONLY this JSON object: {"chunks":[{"i":0,"summary":"...","tools":["..."]}]}',
+                  'For each transcript chunk write "title": a short 3-6 word label naming what the chunk is about, "summary": one plain sentence describing what happens, and "tools": an array of the physical tools/instruments named in that chunk (empty if none). Do not invent tools. Return ONLY this JSON object: {"chunks":[{"i":0,"title":"...","summary":"...","tools":["..."]}]}',
               },
               { role: "user", content: JSON.stringify(input) },
             ],
@@ -58,7 +59,7 @@ export async function summarizeChunks(chunks: ChunkInput[]): Promise<ChunkSummar
         return parseChunkSummaries(res.choices[0]?.message?.content ?? "{}", batch.length);
       } catch (err) {
         console.warn("[chunkSummary] batch failed:", err);
-        return batch.map(() => ({ summarizedText: "", tools: [] }));
+        return batch.map(() => ({ title: "", summarizedText: "", tools: [] }));
       }
     }),
     3,

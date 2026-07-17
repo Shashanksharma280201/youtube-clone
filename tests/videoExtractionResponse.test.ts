@@ -21,7 +21,7 @@ const baseVideo = {
   topicSegments: [
     { mainTag: 'intro', subTag: 'lube overview', start: 12.4, end: 18.9,
       thumbnailPath: 'https://acct.blob.core.windows.net/videosvc/thumbnails/v1/s0.jpg',
-      summarizedText: 'The lube system feeds oil to the bearings.', tools: ['Multimeter'] },
+      title: 'Lube system overview', summarizedText: 'The lube system feeds oil to the bearings.', tools: ['Multimeter'] },
     { mainTag: 'diagnosis', subTag: 'low flow', start: 40, end: 44,
       thumbnailPath: null, summarizedText: 'Check the flow.', tools: [] },
   ],
@@ -43,6 +43,8 @@ describe('buildExtractionResponse', () => {
 
     const c0 = r.chunks[0]
     expect(c0.chunkId).toBe('v1-0')
+    expect(c0.chunkTitle).toBe('Lube system overview')
+    expect(r.chunks[1].chunkTitle).toBe('') // missing title defaults to ''
     expect(c0.start).toBe(12.4)
     expect(c0.transcript).toBe('Alright, today the lube pump. It feeds oil to the bearings.')
     expect(c0.summarizedText).toBe('The lube system feeds oil to the bearings.')

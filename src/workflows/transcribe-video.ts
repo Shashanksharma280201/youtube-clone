@@ -262,6 +262,7 @@ async function summarizeStep(
   const summaries = await summarizeChunks(inputs);
   return topicSegments.map((seg, i) => ({
     ...seg,
+    title: summaries[i]?.title ?? "",
     summarizedText: summaries[i]?.summarizedText ?? "",
     tools: summaries[i]?.tools ?? [],
   }));

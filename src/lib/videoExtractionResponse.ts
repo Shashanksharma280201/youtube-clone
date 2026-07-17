@@ -8,7 +8,7 @@ const defaultSigner: Signer = (url) => getPresignedDownloadUrl(s3Key(url), TTL);
 
 type Seg = {
   mainTag: string; subTag: string; start: number; end: number;
-  thumbnailPath: string | null; summarizedText?: string; tools?: string[];
+  thumbnailPath: string | null; title?: string; summarizedText?: string; tools?: string[];
 };
 // transcriptSegments carry their own phase tags (added by the tag/align steps).
 type Tx = { start: number; end: number; text: string; mainTag?: string; subTag?: string };
@@ -51,6 +51,8 @@ export async function buildExtractionResponse(video: VideoRow, sign: Signer = de
       end: seg.end,
       mainTag: seg.mainTag,
       subTag: seg.subTag,
+      // Short LLM-written label for what this chapter is about.
+      chunkTitle: seg.title ?? "",
       transcript: tx.filter((t) => t.start >= seg.start && t.start < seg.end).map((t) => t.text.trim()).join(" "),
       summarizedText: seg.summarizedText ?? "",
       tools: seg.tools ?? [],
