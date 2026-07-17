@@ -35,6 +35,14 @@ const MODEL_MINI: string = "gpt-5.4-mini";
 const FALLBACK: string = "gpt-4o";
 const FALLBACK_MINI: string = "gpt-4o-mini";
 
+// Image calls need a vision-capable model. The FLAGSHIP gpt-5.4 REJECTS image_url
+// content ("400 image_url is only supported by certain models") — but gpt-5.4-MINI
+// accepts it (verified: it reaches image parsing, not a content-type rejection). So
+// vision stays in the 5.4 family on gpt-5.4-mini, with gpt-4o as a vision-capable
+// fallback. The bug was only that vision calls defaulted to the flagship.
+const VISION_MODEL: string = "gpt-5.4-mini";
+const VISION_FALLBACK: string = "gpt-4o";
+
 // Set the first time a call has to fall back, i.e. the key cannot use the pinned
 // model. Reported on /api/health, because "configured model" alone is not proof:
 // without this, health would keep claiming gpt-5.4 while every call silently ran on
@@ -47,6 +55,7 @@ export function activeModels() {
   return {
     model: MODEL,
     modelMini: MODEL_MINI,
+    visionModel: VISION_MODEL,
     transcription: "whisper-1",
     // null = the pinned models are genuinely being used.
     fellBackTo,
@@ -73,10 +82,10 @@ type ChatParams = Omit<ChatCompletionCreateParamsNonStreaming, "model">;
 
 // Run a chat completion with the configured model; fall back to gpt-4o(-mini) if
 // that model isn't available to the key. `opts.mini` selects the smaller tier.
-export async function chatComplete(params: ChatParams, opts?: { mini?: boolean; label?: string }) {
-  const primary = opts?.mini ? MODEL_MINI : MODEL;
-  const fallback = opts?.mini ? FALLBACK_MINI : FALLBACK;
-  const label = opts?.label ?? "chat";
+export async function chatComplete(params: ChatParams, opts?: { mini?: boolean; vision?: boolean; label?: string }) {
+  const primary = opts?.vision ? VISION_MODEL : opts?.mini ? MODEL_MINI : MODEL;
+  const fallback = opts?.vision ? VISION_FALLBACK : opts?.mini ? FALLBACK_MINI : FALLBACK;
+  const label = opts?.label ?? (opts?.vision ? "vision" : "chat");
   try {
     const res = await openai.chat.completions.create({ ...params, model: primary });
     // res.model is the model that actually ran, so accounting stays correct even if

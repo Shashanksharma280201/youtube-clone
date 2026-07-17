@@ -55,6 +55,38 @@ describe('buildExtractionResponse', () => {
     expect(c0.domainMetaData.machine).toBe('Lubrication System')
   })
 
+  it('exposes the full machine guide at the top level', async () => {
+    const r = await buildExtractionResponse(baseVideo as never, sign)
+    expect(r.guide.machine).toBe('Lubrication System')
+    expect(r.guide.summary).toBe('Diagnosing low-lube-flow.')
+    expect(r.guide.machineIntro).toHaveLength(1)
+    // sections with no data normalize to empty arrays, not undefined
+    expect(r.guide.troubleshooting).toEqual([])
+    expect(r.guide.errorCodes).toEqual([])
+    expect(r.guide.preventiveMaintenance).toEqual([])
+  })
+
+  it('returns the full tagged transcript', async () => {
+    const r = await buildExtractionResponse(baseVideo as never, sign)
+    expect(r.transcript).toHaveLength(3)
+    expect(r.transcript[0]).toMatchObject({ start: 12.4, end: 15, text: 'Alright, today the lube pump.' })
+    // tags default to '' when the stored segment has none
+    expect(r.transcript[0].mainTag).toBe('')
+  })
+
+  it('signs the top-level thumbnailUrl when present, null otherwise', async () => {
+    const noThumb = await buildExtractionResponse(baseVideo as never, sign)
+    expect(noThumb.thumbnailUrl).toBeNull()
+
+    const withThumb = await buildExtractionResponse(
+      { ...baseVideo, thumbnailUrl: 'https://acct.blob.core.windows.net/videosvc/thumbnails/v1/s0.jpg' } as never,
+      sign,
+    )
+    expect(withThumb.thumbnailUrl).toBe(
+      'https://acct.blob.core.windows.net/videosvc/thumbnails/v1/s0.jpg?sig=1',
+    )
+  })
+
   it('uses externalId as resourceId, falls back to id', async () => {
     const r = await buildExtractionResponse({ ...baseVideo, externalId: null } as never, sign)
     expect(r.resourceId).toBe('v1')

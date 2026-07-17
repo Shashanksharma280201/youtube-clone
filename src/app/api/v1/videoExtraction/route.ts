@@ -6,35 +6,32 @@ import { parseStorageUrl } from '@/lib/storage/parseUrl'
 import { start } from 'workflow/api'
 import { transcribeVideoWorkflow } from '@/workflows/transcribe-video'
 import { buildExtractionResponse } from '@/lib/videoExtractionResponse'
-import { waitForTerminal, isTerminal } from '@/lib/waitForTerminal'
 
-// Ingest a video by its blob URL and return the extracted chunks.
+// Ingest a video by its blob URL and extract its chunks.
 //
-// SYNCHRONOUS: one call in, the chunks out. The handler starts the pipeline and
-// then holds the request open until it finishes, so a caller never has to know
-// about polling. This is deliberate — the previous poll-based contract returned
-// 202 with `chunks: []`, and because 202 is a 2xx an `if (response.ok)` check
-// passes, so callers recorded "success, zero chunks" and shipped an empty result
-// downstream. A response that means "not ready" must not look like an answer.
+// ASYNCHRONOUS: the call kicks off the durable pipeline and returns immediately.
+// It never holds the request open waiting for the work — a long video (hours) is
+// processed in the background and the caller learns it is done by asking again.
 //
-// The pipeline itself is unchanged and still durable: it runs outside the request
-// and survives a pod restart, which the open connection does not. So the wait is a
-// convenience layered on top, never the thing keeping the work alive. If the caller
-// disconnects, processing continues; calling again with the same resourceId returns
-// the finished result immediately rather than redoing it.
+// The contract:
+//   - First call for a new resourceId → 202 with status PROCESSING (work started).
+//   - Call again with the SAME resourceId while it runs → 202 (still PROCESSING).
+//   - Call again once finished → 200 with the full result (chunks + guide + transcript).
+//   - Failed → 409.
+// So the caller polls this endpoint (or a dedicated GET /status) until status is
+// DONE, then reads the body. Processing is idempotent per resourceId: an existing
+// resource is never reprocessed — the call attaches to the in-flight run or returns
+// the finished result straight away.
 //
 // Status codes:
-//   200 — done, chunks in the body
-//   202 — still running after WAIT_MS (rare; caller may poll, as before)
+//   200 — done, full result in the body
+//   202 — accepted / still running (poll again with the same resourceId)
 //   409 — processing failed
 //   400 / 404 — bad request / blob not in storage
 export const dynamic = 'force-dynamic'
-export const maxDuration = 1800 // seconds; matches the ingress proxy-read-timeout
-
-// Capped below the ingress's 1800s proxy-read-timeout, so we answer before nginx
-// gives up on us — a 504 would tell the caller nothing about the job's real state.
-const WAIT_MS = Number(process.env.EXTRACTION_WAIT_MS ?? 25 * 60 * 1000)
-const POLL_MS = Number(process.env.EXTRACTION_POLL_MS ?? 3000)
+// The request only validates input and starts the durable job, so it returns in
+// seconds — it no longer needs a long timeout to hold the connection open.
+export const maxDuration = 60
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}))
@@ -50,10 +47,10 @@ export async function POST(request: Request) {
     )
   }
 
-  // Existing resource: never reprocess. Attach to the run already in flight (or
-  // return its finished result straight away).
+  // Existing resource: never reprocess. Return its current state (finished result,
+  // or PROCESSING if a run is already in flight).
   const existing = await prisma.video.findUnique({ where: { externalId: resourceId } })
-  if (existing) return settle(existing)
+  if (existing) return respond(existing)
 
   let parsed: { container: string; key: string }
   try {
@@ -84,13 +81,11 @@ export async function POST(request: Request) {
     })
   } catch (err) {
     // Two callers raced past the findUnique above and both tried to create the row;
-    // the externalId unique constraint let exactly one win. The loser must attach to
-    // the winner's run, not error — otherwise a duplicate request (which a sync API
-    // invites, since a slow response looks like a hang) would 500. Rare before the
-    // request started taking minutes; routine now.
+    // the externalId unique constraint let exactly one win. The loser attaches to
+    // the winner's run rather than erroring.
     if (isUniqueViolation(err)) {
       const winner = await prisma.video.findUnique({ where: { externalId: resourceId } })
-      if (winner) return settle(winner)
+      if (winner) return respond(winner)
     }
     throw err
   }
@@ -103,7 +98,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to start processing' }, { status: 500 })
   }
 
-  return settle(video)
+  // Work has started and runs in the background — answer 202 right away.
+  return respond(video)
 }
 
 function isUniqueViolation(err: unknown): boolean {
@@ -111,20 +107,6 @@ function isUniqueViolation(err: unknown): boolean {
 }
 
 type Row = NonNullable<Awaited<ReturnType<typeof prisma.video.findUnique>>>
-
-// Hold the request until the row reaches DONE/FAILED, then answer. Falls back to
-// the old 202 if the wait is exhausted, so a pathologically slow video degrades to
-// poll-based instead of hanging until the ingress kills the connection.
-async function settle(video: Row) {
-  if (isTerminal(video.transcriptStatus)) return respond(video)
-
-  const final = await waitForTerminal(
-    () => prisma.video.findUnique({ where: { id: video.id } }),
-    { timeoutMs: WAIT_MS, pollMs: POLL_MS },
-  )
-
-  return respond(final ?? video)
-}
 
 async function respond(video: Row) {
   const s = video.transcriptStatus

@@ -77,7 +77,7 @@ export async function describeFramesBatch(framePaths: string[]): Promise<string[
               ],
             },
           ],
-        });
+        }, { vision: true });
         const text = res.choices[0]?.message?.content?.trim() ?? "";
         // A bare sentence is best; if the model still returned JSON, parse it safely.
         descriptions.push(text && !text.startsWith("[") && !text.startsWith("{") ? text : parseDescriptions(text, 1)[0]);
@@ -98,7 +98,7 @@ export async function describeFramesBatch(framePaths: string[]): Promise<string[
               ],
             },
           ],
-        });
+        }, { vision: true });
         const text = res.choices[0]?.message?.content?.trim() ?? "";
         descriptions.push(...parseDescriptions(text, batch.length));
       }
@@ -183,7 +183,7 @@ async function locateComponent(framePath: string, stepText: string): Promise<str
           ],
         },
       ],
-    });
+    }, { vision: true });
     const t = res.choices[0]?.message?.content?.trim() ?? "";
     // guard against the model echoing the instruction or returning junk
     return t.length > 4 && t.length < 200 ? t.replace(/^["']|["']$/g, "") : "";
